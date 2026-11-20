@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { UniverseScene } from './three/UniverseScene'
-import { bodyById, matchBody } from './data/bodies'
-import { Launcher } from './launcher/Launcher'
-import { readSeed, writeSeed } from './launcher/seed'
-import { NebulaOverlay } from './semantic/NebulaOverlay'
+import { bodyById } from './data/bodies'
 import { DetailPanel } from './ui/DetailPanel'
 import { CatalogPanel } from './ui/CatalogPanel'
 
-/** 根组件：三维场景 + 发射台 + 详情面板 + 文字星图覆盖层。 */
+/** 根组件：三维太阳系场景 + 图鉴列表 + 详情面板。 */
 export default function App(): ReactElement {
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<UniverseScene | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null)
-  const [semantic, setSemantic] = useState<string | null>(null)
   const [paused, setPaused] = useState(false)
   const [orbitScale, setOrbitScale] = useState(1)
   const [spinScale, setSpinScale] = useState(1)
@@ -40,7 +36,7 @@ export default function App(): ReactElement {
   }, [setCatalogOpen])
 
   /**
-   * 选中并聚焦某天体：发射台点名与图鉴列表共用。
+   * 选中并聚焦某天体：图鉴列表与三维视图共用同一条入口。
    * @param id 天体 id
    */
   const pickBody = useCallback((id: string): void => {
@@ -59,22 +55,6 @@ export default function App(): ReactElement {
     sceneRef.current?.faceDirection(x, y, z)
   }, [])
 
-  /** 发射：写入 URL 种子、打开文字星图、若指名天体则聚焦。 */
-  const launch = useCallback((text: string): void => {
-    writeSeed(text)
-    setSemantic(text)
-    const body = matchBody(text)
-    if (body) pickBody(body.id)
-  }, [pickBody])
-
-  /** 首次带种子打开时自动发射一次。 */
-  useEffect(() => {
-    const seed = readSeed()
-    if (seed.length === 0) return
-    const timer = window.setTimeout(() => launch(seed), 700)
-    return () => window.clearTimeout(timer)
-  }, [launch])
-
   /** 暂停/速度/复位的场景同步。 */
   useEffect(() => {
     sceneRef.current?.setPaused(paused)
@@ -88,11 +68,9 @@ export default function App(): ReactElement {
 
   const selected = selectedId === null ? undefined : bodyById(selectedId)
   const hoverBody = hover === null ? undefined : bodyById(hover.id)
-  // 窄屏下图鉴/详情面板为浮层，打开时用该类名收起发射台，避免两层叠在一起。
-  const panelOpen = catalogOpen || selected !== undefined
 
   return (
-    <div className={`app${panelOpen ? ' app--panel' : ''}`}>
+    <div className="app">
       <div ref={hostRef} className="scene-host" />
 
       <header className="topbar">
@@ -106,7 +84,7 @@ export default function App(): ReactElement {
         <div className="topbar-meta">
           <span
             className="scale-note"
-            title="行星大小按半径的 0.55 次方压缩，HYG 恒星按秒差距缩放，两套坐标系叠加，仅作示意"
+            title="行星大小按真实半径的 0.82 次方压缩，恒星只取天区方向，均仅作示意"
           >
             比例示意 · 非真实尺度
           </span>
@@ -123,8 +101,6 @@ export default function App(): ReactElement {
           {hoverBody.name}
         </div>
       )}
-
-      <Launcher onLaunch={launch} />
 
       {catalogOpen && (
         <CatalogPanel
@@ -175,13 +151,10 @@ export default function App(): ReactElement {
         <button className="ctrl-btn" onClick={() => sceneRef.current?.resetView()}>复位视角</button>
       </div>
 
-      {/* 文字星图浮层打开时收起详情面板，避免两层面板叠在右侧。 */}
-      {selected && semantic === null && <DetailPanel body={selected} onClose={() => {
+      {selected && <DetailPanel body={selected} onClose={() => {
         setSelectedId(null)
         sceneRef.current?.setSelected(null)
       }} />}
-
-      {semantic !== null && <NebulaOverlay text={semantic} onClose={() => setSemantic(null)} />}
     </div>
   )
 }

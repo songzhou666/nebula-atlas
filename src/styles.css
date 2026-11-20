@@ -132,93 +132,6 @@ body {
   color: var(--text);
 }
 
-/* ------------------------------------------------------------- 发射台 */
-.launcher {
-  position: absolute;
-  left: 22px;
-  bottom: 22px;
-  width: 380px;
-  max-width: calc(100vw - 44px);
-  padding: 14px;
-  border-radius: 16px;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  backdrop-filter: blur(14px);
-}
-
-.launcher-label {
-  font-size: 12px;
-  letter-spacing: 3px;
-  color: var(--accent);
-  margin-bottom: 8px;
-}
-
-.launcher-row {
-  display: flex;
-  gap: 8px;
-}
-
-.launcher-input {
-  flex: 1;
-  min-width: 0;
-  background: rgba(6, 10, 20, 0.8);
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  color: var(--text);
-  padding: 10px 12px;
-  font-size: 14px;
-  outline: none;
-}
-
-.launcher-input:focus {
-  border-color: var(--accent);
-}
-
-.launch-btn {
-  border: none;
-  border-radius: 10px;
-  padding: 0 18px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #081020;
-  background: linear-gradient(135deg, #8fc0ff, #ffc06b);
-  cursor: pointer;
-}
-
-.launch-btn:hover {
-  filter: brightness(1.08);
-}
-
-.launcher-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.chip {
-  font-size: 12px;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--panel-border);
-  border-radius: 999px;
-  padding: 4px 10px;
-  cursor: pointer;
-}
-
-.chip:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-/* 发射台原理说明：明确这是字符特征哈希，不是语义理解。 */
-.launcher-note {
-  margin-top: 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
 /* ------------------------------------------------------------- 控制条 */
 .controls {
   position: absolute;
@@ -456,6 +369,47 @@ body {
 .catalog-list {
   overflow-y: auto;
   min-height: 0;
+  /* 恒星页里列表要吃掉剩余高度，否则 60 行会把面板撑破、滚不动。 */
+  flex: 1;
+}
+
+/* 恒星页：搜索框 + 详情卡 + 可分页列表，整体是一个 flex 列。 */
+.catalog-stars {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 分页条：固定在列表下方，不随内容滚动。 */
+.catalog-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 2px 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pager-btn {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pager-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pager-btn:not(:disabled):hover {
+  border-color: var(--accent);
 }
 
 .catalog-row {
@@ -581,96 +535,6 @@ body {
   pointer-events: auto;
 }
 
-/* --------------------------------------------------------- 文字星图覆盖层 */
-/* 浮层靠右摆放：聚焦天体已移到画面偏左，避免卡片挡住行星。 */
-.overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 24px;
-  pointer-events: none;
-}
-
-.overlay-card {
-  pointer-events: auto;
-  display: flex;
-  flex-direction: column;
-  width: 480px;
-  max-width: calc(100vw - 32px);
-  height: 360px;
-  max-height: calc(100vh - 160px);
-  border-radius: 18px;
-  overflow: hidden;
-  background: rgba(8, 12, 24, 0.94);
-  border: 1px solid var(--panel-border);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
-}
-
-.overlay-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 16px;
-}
-
-.call-sign {
-  font-size: 12px;
-  letter-spacing: 2px;
-  color: var(--accent-warm);
-  border: 1px solid rgba(255, 192, 107, 0.45);
-  border-radius: 8px;
-  padding: 4px 10px;
-}
-
-.overlay-title {
-  font-size: 15px;
-  letter-spacing: 2px;
-}
-
-.overlay-head .ghost-btn {
-  margin-left: auto;
-}
-
-.overlay-canvas {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-}
-
-.overlay-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-  padding: 12px 18px 16px;
-}
-
-/* 说明文字独占一行，避免被能量剖面挤成省略号。 */
-.overlay-text {
-  flex: 1 1 100%;
-  font-size: 14px;
-  color: #cdd8ef;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.profile-chart {
-  width: 256px;
-  height: 40px;
-  opacity: 0.9;
-}
-
-.overlay-hint {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--muted);
-}
-
 @media (max-width: 720px) {
   /* 顶栏压缩：隐藏副标题与统计胶囊，只留品牌和图鉴开关。 */
   .topbar {
@@ -763,45 +627,5 @@ body {
 
   .detail-tex {
     height: 120px;
-  }
-
-  /* 面板打开时收起发射台，避免两层叠在一起。 */
-  .app--panel .launcher {
-    display: none;
-  }
-
-  .launcher {
-    left: 12px;
-    bottom: 12px;
-    width: calc(100vw - 24px);
-    padding: 12px;
-  }
-
-  /* 窄屏没有横向空间，浮层回到居中。 */
-  .overlay {
-    justify-content: center;
-    padding-right: 0;
-    padding-left: 0;
-  }
-
-  .overlay-card {
-    width: calc(100vw - 24px);
-    height: min(64vh, 480px);
-    max-height: calc(100vh - 80px);
-  }
-
-  /* 浮层底栏在窄屏改为上下两行，避免说明文字被压成竖排。 */
-  .overlay-foot {
-    gap: 10px;
-    padding: 12px 16px 14px;
-  }
-
-  .overlay-text {
-    max-width: 100%;
-  }
-
-  .profile-chart {
-    width: 100%;
-    max-width: 256px;
   }
 }

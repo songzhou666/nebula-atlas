@@ -174,6 +174,22 @@ const SPIN_TIME_SCALE = 0.25
  */
 const ORBIT_TIME_SCALE = 6.1
 
+/**
+ * 初始公转相位（弧度，从 +x 轴起算）。
+ * 用固定值而不是随机数：一是每次打开画面一致、截图可复现；
+ * 二是让行星落在太阳背离相机的一侧（接近冲日），默认视角看到的是受光面，
+ * 不会随机出现"土星只有一圈黑环"的夜半球构图。
+ */
+const START_ANGLE: Record<string, number> = {
+  mercury: 0.9,
+  venus: 2.1,
+  earth: 0.35,
+  mars: 1.85,
+  jupiter: 0.45,
+  saturn: 2.75,
+  uranus: 1.2,
+  neptune: 5.7,
+}
 /** 各行星自转轴倾角（度），来自 NASA NSSDC 行星事实表。
  * 天王星 97.8° = 几乎躺着转，是太阳系独一份。 */
 const AXIAL_TILT_DEG: Record<string, number> = {
@@ -441,9 +457,14 @@ export class UniverseScene {
         positions[i * 3] = (x / len) * SHELL
         positions[i * 3 + 1] = (y / len) * SHELL
         positions[i * 3 + 2] = (z / len) * SHELL
-        colors[i * 3] = star.rgb[0]
-        colors[i * 3 + 1] = star.rgb[1]
-        colors[i * 3 + 2] = star.rgb[2]
+        // 星等 → 亮度：真实天空每差 5 等亮度差 100 倍（6 等星只有 1 等星的 1%），
+        // 直接照搬会让暗星彻底消失，这里用压缩到 0.28~1.0 的映射。
+        // 不乘这个系数的话，2034 颗星会以同一透明度叠加，看起来"满天一样亮"，
+        // 与真实夜空（少数亮星 + 大片暗星）不符。
+        const bright = 0.28 + 0.72 * Math.min(1, Math.max(0, (6.5 - star.mag) / 6.5))
+        colors[i * 3] = star.rgb[0] * bright
+        colors[i * 3 + 1] = star.rgb[1] * bright
+        colors[i * 3 + 2] = star.rgb[2] * bright
       })
       const geo = new THREE.BufferGeometry()
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -566,7 +587,7 @@ export class UniverseScene {
         mesh,
         displayRadius: radius,
         orbitRadius: isSun ? 0 : isMoon ? 0 : orbitRadius(def.au),
-        angle: Math.random() * Math.PI * 2,
+        angle: START_ANGLE[def.id] ?? 0,
         // 自转速度：2π / 自转周期（天）× 时间缩放。
         // 注意不要再按 retrograde 取负号：金星 177.4°、天王星 97.8° 的倾角本身
         // 已经大于 90°，即"轴朝天"就代表逆行，再取负号会造成两次翻转、看起来反而顺行。

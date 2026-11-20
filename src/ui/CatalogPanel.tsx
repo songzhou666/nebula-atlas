@@ -12,6 +12,9 @@ interface StarDef {
 
 const STARS = starsData as unknown as StarDef[]
 
+/** 每页显示的恒星条数。 */
+const PAGE_SIZE = 60
+
 /** 星座缩写 → 中文名（常见星座，未收录的显示缩写）。 */
 const CON_CN: Record<string, string> = {
   Ori: '猎户座', UMa: '大熊座', Sco: '天蝎座', Cyg: '天鹅座', Lyr: '天琴座', Tau: '金牛座',
@@ -55,23 +58,37 @@ export function CatalogPanel({ onSelectBody, onFaceStar, onClose }: Props): Reac
   const [tab, setTab] = useState<'system' | 'stars'>('system')
   const [query, setQuery] = useState('')
   const [starIndex, setStarIndex] = useState<number | null>(null)
+  const [page, setPage] = useState(0)
   const previewRef = useRef<HTMLCanvasElement>(null)
 
-  /** 恒星过滤：按名称 / 星座缩写 / 星座中文名匹配。 */
+  /** 恒星过滤：按名称 / 星座缩写 / 星座中文名匹配，结果按星等从亮到暗排序。 */
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (q.length === 0) return STARS.map((_, i) => i)
-    return STARS.map((s, i) => ({ s, i }))
-      .filter(({ s }) => {
-        const cn = CON_CN[s.con] ?? ''
-        return (
-          s.name.toLowerCase().includes(q) ||
-          s.con.toLowerCase().includes(q) ||
-          cn.includes(query.trim())
-        )
-      })
-      .map(({ i }) => i)
+    const picked =
+      q.length === 0
+        ? STARS.map((_, i) => i)
+        : STARS.map((s, i) => ({ s, i }))
+            .filter(({ s }) => {
+              const cn = CON_CN[s.con] ?? ''
+              return (
+                s.name.toLowerCase().includes(q) ||
+                s.con.toLowerCase().includes(q) ||
+                cn.includes(query.trim())
+              )
+            })
+            .map(({ i }) => i)
+    // 亮星表按星等升序：数值越小越亮，第一页就是全天最亮的一批。
+    return picked.sort((a, b) => STARS[a]!.mag - STARS[b]!.mag)
   }, [query])
+
+  /** 搜索条件变化时回到第一页，避免停留在越界页码。 */
+  useEffect(() => {
+    setPage(0)
+  }, [query])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pageStars = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
 
   const star = starIndex === null ? null : STARS[starIndex]!
 
@@ -155,14 +172,14 @@ export function CatalogPanel({ onSelectBody, onFaceStar, onClose }: Props): Reac
                 <div><span>距离</span><b>{starDistance(star).pc} pc · {starDistance(star).ly} 光年</b></div>
                 <div><span>颜色</span><b>{star.rgb.map((v) => Math.round(v * 255)).join(', ')}</b></div>
               </div>
-              <button className="launch-btn star-face" onClick={() => onFaceStar(star.xyz[0]!, star.xyz[1]!, star.xyz[2]!)}>
+              <button className="star-face" onClick={() => onFaceStar(star.xyz[0]!, star.xyz[1]!, star.xyz[2]!)}>
                 转向该恒星
               </button>
               <p className="catalog-note">恒星只有星表数据，没有表面贴图；可关闭后在星空中拖动查看。</p>
             </div>
           )}
           <div className="catalog-list">
-            {filtered.slice(0, 300).map((i) => {
+            {pageStars.map((i) => {
               const s = STARS[i]!
               return (
                 <button key={i} className="catalog-row" onClick={() => setStarIndex(i)}>
@@ -175,9 +192,27 @@ export function CatalogPanel({ onSelectBody, onFaceStar, onClose }: Props): Reac
                 </button>
               )
             })}
-            {filtered.length > 300 && <p className="catalog-note">仅显示前 300 条，请用搜索缩小范围。</p>}
             {filtered.length === 0 && <p className="catalog-note">没有匹配的恒星。</p>}
           </div>
+          {filtered.length > PAGE_SIZE && (
+            <div className="catalog-pager">
+              <button
+                className="pager-btn"
+                disabled={safePage === 0}
+                onClick={() => setPage(Math.max(0, safePage - 1))}
+              >
+                上一页
+              </button>
+              <span>第 {safePage + 1} / {totalPages} 页 · 共 {filtered.length} 颗</span>
+              <button
+                className="pager-btn"
+                disabled={safePage >= totalPages - 1}
+                onClick={() => setPage(Math.min(totalPages - 1, safePage + 1))}
+              >
+                下一页
+              </button>
+            </div>
+          )}
         </div>
       )}
     </aside>

@@ -1,6 +1,6 @@
 # Solar System Atlas (太阳系图鉴)
 
-An interactive solar system driven by real data: the Sun, the eight planets and the Moon, layered with the HYG bright-star catalog, plus a "Text Star-map Generator".
+An interactive solar system driven by real data: the Sun, eight planets, the Moon and two comets, layered with the HYG bright-star catalog and a real Milky Way panorama.
 
 [中文](README.md) | English
 
@@ -10,7 +10,7 @@ An interactive solar system driven by real data: the Sun, the eight planets and 
 >
 > **About stars**: the HYG catalog contributes direction only (parsec distances are discarded) and is projected onto a sphere of radius 2400, so the sky keeps the real celestial distribution but not real distances.
 >
-> **About the "Text Star-map Generator"**: it is a **character-feature hash** (text is split into character n-grams, hashed into a vector, then FFT-smoothed into a 256-band energy profile) that drives the nebula's shape and palette. It is **not semantic understanding** — swap the word order or use a synonym and the pattern changes.
+> **About star brightness**: the HYG catalog only lists stars brighter than about magnitude 6 (the naked-eye limit); each star's rendered brightness is a compressed function of its magnitude, so a mag-6 star is roughly 28% as bright as a mag-1 star — bright stars stand out, faint ones recede, instead of the whole sky glowing uniformly.
 
 ## Screenshots
 
@@ -27,12 +27,11 @@ Mobile (390×844):
 - **Solar system**: Sun, eight planets and the Moon, with parameters from NASA NSSDC (radius, mass, distance from the Sun, rotation/orbital period, surface temperature, surface gravity, moon count).
 - **Comets**: Halley 1P (inclination 162.3°, retrograde, 76-year period) and Encke 2P (inclination 11.8°, prograde, 3.30 years), with real perihelion/aphelion; the ion tail points strictly anti-sunward, while the dust tail inherits the comet's local orbital velocity — curved near perihelion, straighter near aphelion.
 - **Real sky**: an 8k Milky Way panorama plus 2034 HYG bright stars placed by their true celestial directions.
+- **Atlas**: 10 bodies plus 2034 bright stars; stars are sorted brightest-first, paginated 60 per page, and "Turn to this star" aims the view at the selected one.
 - **Free camera**: drag to orbit, scroll to zoom, pause, reset view.
 - **Speed control**: independent sliders for orbital and spin speed — down to 0 or up.
 - **Click to focus**: click any body in the 3D view to fly to it; a detail panel opens on the right.
 - **Detail panel**: drag the texture sideways to spin the body, plus a parameter table and a fun fact.
-- **Atlas**: left-hand list with a "Solar System" and a "Stars · 2034" tab; stars can be searched by name or constellation, and "Turn to this star" aims the view at it.
-- **Text Star-map Generator**: type some text (or pick a quick chip) and "launch" to render a text star-map locally, written into the URL for sharing; if the text names a body, it also focuses that body.
 - **Mobile friendly**: compact top bar, 2×2 control grid, full-screen atlas drawer and bottom-sheet detail panel on narrow screens.
 
 ## Tech stack
@@ -57,12 +56,8 @@ npm run preview
 src/
   data/        planets.json / stars.json / bodies.ts / textures.ts
   three/       UniverseScene.ts   3D scene: bodies, orbits, camera, picking
-  ui/          CatalogPanel.tsx   Atlas (solar system + stars)
+  ui/          CatalogPanel.tsx   Atlas (solar system + stars, paginated)
                DetailPanel.tsx    Detail panel with draggable texture
-  launcher/    Launcher.tsx       Text star-map launcher
-               seed.ts            URL seed read/write
-  semantic/    engine.ts          character-feature hash → 256-band profile
-               NebulaOverlay.tsx  text star-map overlay
 ```
 
 ## Data sources

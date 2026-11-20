@@ -138,7 +138,11 @@ export function CatalogPanel({ onSelectBody, onFaceStar, onClose }: Props): Reac
       {tab === 'system' ? (
         <div className="catalog-list">
           {BODIES.map((b) => (
-            <button key={b.id} className="catalog-row" onClick={() => onSelectBody(b.id)}>
+            <button
+              key={b.id}
+              className={b.kind === 'moon' ? 'catalog-row catalog-row--moon' : 'catalog-row'}
+              onClick={() => onSelectBody(b.id)}
+            >
               <span className="dot" style={{ background: b.color }} />
               <span className="catalog-name">
                 {b.name}

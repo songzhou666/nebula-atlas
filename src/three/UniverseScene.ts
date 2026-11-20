@@ -44,6 +44,8 @@ interface BodyNode {
   cloudAngle?: number
   /** 夜半球城市灯光叠加层（ShaderMaterial + AdditiveBlending）。 */
   night?: THREE.Mesh
+  /** 卫星轨道导引线：仅在聚焦母行星系统时显示，远景下不显示，避免画面杂乱。 */
+  moonOrbit?: THREE.Line
 }
 
 /**
@@ -173,6 +175,30 @@ const SPIN_TIME_SCALE = 0.25
  * 若强行让比例等于真实值，地球需 0.16 秒转一圈（糊成一片），不具可看性。
  */
 const ORBIT_TIME_SCALE = 6.1
+
+/**
+ * 卫星轨道半径：母行星显示半径的倍数，再加卫星自身半径。
+ * 真实距离（木卫一到木星 6 倍半径、木卫四 27 倍）照搬会让木卫四压到土星轨道上，
+ * 所以统一压缩到 1.55~2.9 倍：次序仍由内到外，也不会越出母行星轨道范围。
+ */
+const MOON_ORBIT_FACTOR: Record<string, number> = {
+  moon: 1.65,
+  io: 1.55,
+  europa: 1.9,
+  ganymede: 2.3,
+  callisto: 2.75,
+  titan: 2.9,
+  triton: 2.6,
+}
+
+/**
+ * 巨行星卫星的公转倍率（天 → 秒）。
+ * 用行星的 6.1 会让木卫一 0.29 秒绕木星一圈，直接糊成频闪；
+ * 0.3 让木卫一约 5.9 秒一圈，卫星之间仍保持真实周期比
+ * （木卫一 : 木卫二 : 木卫三 : 木卫四 = 1 : 2.01 : 4.04 : 9.44）。
+ * 地月系不套用这个倍率，仍按行星基准，保证「地球一年内 13.37 次月相」的关系。
+ */
+const MOON_TIME_SCALE = 0.3
 
 /**
  * 初始公转相位（弧度，从 +x 轴起算）。
@@ -337,6 +363,10 @@ export class UniverseScene {
   private followId: string | null = null
   private focusDistance = 0
   private focusing = false
+  /** 拥有卫星的母行星 id 集合（地球、木星、土星、海王星）。 */
+  private readonly moonParents = new Set<string>()
+  /** 当前显示卫星轨道导引线的母行星 id；null 表示不显示。 */
+  private moonGuideParent: string | null = null
   private downX = 0
   private downY = 0
   private disposed = false
@@ -816,33 +846,54 @@ export class UniverseScene {
       })
     }
 
-    // 月球挂在 scene 下而非 earth.mesh 下：避免月球跟着地球自转转一圈，
-    // 实现潮汐锁定（月球同一面永远朝向地球）。animate 里手动同步位置。
-    const moon = this.nodes.get('moon')
-    if (earth && moon) {
-      this.scene.add(moon.mesh)
-      moon.orbitRadius = earth.displayRadius + moon.displayRadius + 1.2
-      moon.mesh.position.copy(earth.mesh.position).setX(earth.mesh.position.x + moon.orbitRadius)
-      moon.parent = earth
-      moon.orbitSpeed = (Math.PI * 2 / 27.322) * ORBIT_TIME_SCALE
-      // 潮汐锁定：月球不自转（rotation.y 不增加），同一面永远朝向地球。
-      moon.spin = 0
+    // 所有卫星都挂在 scene 下而非母行星 mesh 下：避免跟着行星自转转一圈，
+    // 这样才能实现潮汐锁定（同一面永远朝向母星）。animate 里按母行星世界位置同步。
+    for (const node of this.nodes.values()) {
+      if (node.def.kind !== 'moon') continue
+      const parent = node.def.parent ? this.nodes.get(node.def.parent) : undefined
+      if (!parent) continue
+      this.scene.add(node.mesh)
+      const factor = MOON_ORBIT_FACTOR[node.def.id] ?? 2
+      node.orbitRadius = parent.displayRadius * factor + node.displayRadius
+      node.mesh.position.copy(parent.mesh.position).setX(parent.mesh.position.x + node.orbitRadius)
+      node.parent = parent
+      // 地月系沿用行星时间基准，其余卫星用更慢的卫星倍率（见 MOON_TIME_SCALE 注释）。
+      const scale = node.def.parent === 'earth' ? ORBIT_TIME_SCALE : MOON_TIME_SCALE
+      node.orbitSpeed =
+        (Math.PI * 2 / Math.max(node.def.orbitalDays, 0.1)) * scale * (node.def.retrograde ? -1 : 1)
+      // 潮汐锁定：卫星不自转（rotation.y 不增加），同一面永远朝向母星。
+      node.spin = 0
+      // 卫星轨道导引线：默认隐藏，聚焦母行星系统时才显示，
+      // 否则木星、土星周围会一直挂着一圈圈细线，远景下反而很杂乱。
+      node.moonOrbit = this.createOrbitLine(node.orbitRadius, '#37567f', 0.5)
+      node.moonOrbit.visible = false
+      this.scene.add(node.moonOrbit)
+      this.moonParents.add(parent.def.id)
     }
   }
 
   /** 画一条轨道参考线。 */
   private addOrbitLine(radius: number): void {
+    this.scene.add(this.createOrbitLine(radius, '#2b3a55', 0.45))
+  }
+
+  /**
+   * 生成一条水平圆形轨道线（xz 平面），调用方决定是否加入场景。
+   * @param radius 轨道半径（场景单位）
+   * @param color 线条颜色
+   * @param opacity 线条透明度
+   */
+  private createOrbitLine(radius: number, color: string, opacity: number): THREE.Line {
     const points: THREE.Vector3[] = []
     for (let i = 0; i <= 128; i++) {
       const a = (i / 128) * Math.PI * 2
       points.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius))
     }
     const geo = new THREE.BufferGeometry().setFromPoints(points)
-    const line = new THREE.Line(
+    return new THREE.Line(
       geo,
-      new THREE.LineBasicMaterial({ color: '#2b3a55', transparent: true, opacity: 0.45 }),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }),
     )
-    this.scene.add(line)
   }
 
   /** 生成两颗彗星：彗头光点 + 离子尾/尘埃尾粒子池，沿椭圆轨道绕太阳运行。 */
@@ -1194,7 +1245,9 @@ export class UniverseScene {
         node.mesh.rotation.y += node.spin * spinDt
         if (node.parent) {
           // 月球：在 scene 下独立 mesh，公转位置 = 地球世界位置 + 公转偏移向量。
-          node.angle += node.orbitSpeed * orbitDt
+          // 正在近距离观察的卫星暂停绕母星公转：公转会在一两秒内把它转到夜半球，
+          // 贴图刚看清就黑掉；移开焦点后自动恢复公转。
+          if (this.followId !== node.def.id) node.angle += node.orbitSpeed * orbitDt
           const earthPos = node.parent.mesh.position
           node.mesh.position.set(
             earthPos.x + Math.cos(node.angle) * node.orbitRadius,
@@ -1241,6 +1294,14 @@ export class UniverseScene {
       }
       this.updateComets(dt)
       this.starGroup.rotation.y += dt * 0.004
+    }
+
+    // 卫星轨道导引线：跟随母行星平移，且只在聚焦该行星系统时显示。
+    // 放在暂停判断之外，这样暂停时选中天体也能立刻看到/隐藏轨道。
+    for (const node of this.nodes.values()) {
+      if (!node.moonOrbit || !node.parent) continue
+      node.moonOrbit.position.copy(node.parent.mesh.position)
+      node.moonOrbit.visible = this.moonGuideParent === node.parent.def.id
     }
 
     // 星点呼吸式闪烁：各层相位错开，避免整片星空同步明灭。
@@ -1300,6 +1361,9 @@ export class UniverseScene {
   /** 视角复位：回到太阳系的广角初始机位。 */
   resetView(): void {
     this.followId = null
+    this.moonGuideParent = null
+    // 复位时恢复全局最小机位距离（聚焦卫星时会临时放宽）。
+    this.controls.minDistance = 8
     this.focusOffset.set(0, 0, 0)
     this.focusTarget.set(0, 0, 0)
     this.focusDistance = 440
@@ -1318,7 +1382,11 @@ export class UniverseScene {
     const world = new THREE.Vector3()
     node.mesh.getWorldPosition(world)
     this.focusTarget.copy(world)
-    this.focusDistance = Math.max(9, node.displayRadius * 8)
+    // 卫星半径只有行星的几十分之一，沿用行星的机位会让卫星只剩二十来像素；
+    // 这里给卫星单独的近机位，同时放宽 OrbitControls 的最小距离（否则会被夹回 8）。
+    const isMoonNode = node.def.kind === 'moon'
+    this.focusDistance = isMoonNode ? Math.max(2.4, node.displayRadius * 5) : Math.max(9, node.displayRadius * 8)
+    this.controls.minDistance = isMoonNode ? this.focusDistance * 0.8 : 8
     // 相机放在天体的侧向（略偏向太阳），这样能看到被太阳照亮的半球；
     // 若沿 outward（背离太阳）偏移，相机就落在夜半球一侧，行星几乎全黑，
     // 之前木星聚焦后只剩一个黑盘就是这个符号写反导致的。
@@ -1331,7 +1399,11 @@ export class UniverseScene {
     side.normalize()
     // 侧向 1 + 朝日 0.45：相机与太阳方向的夹角约 66°，行星呈约 70% 受光的凸相，
     // 既能看到完整贴图细节，又保留昼夜分界线，不会像正对太阳时那样完全扁平。
-    const camDir = side.clone().add(outward.clone().multiplyScalar(-0.45)).normalize()
+    // 再抬高约 18°：行星公转轨道面是 y=0 平面，若相机也停在 y=0，卫星轨道、
+    // 土星环都会被压成一条线，四颗伽利略卫星还会全部躲在木星圆面后面。
+    const camDir = side.clone().add(outward.clone().multiplyScalar(-0.45))
+    camDir.y += 0.32
+    camDir.normalize()
     this.camera.position.copy(world.clone().add(camDir.multiplyScalar(this.focusDistance * 1.8)))
     // 构图偏移：让天体落在画面偏左，避开居中浮层卡片与右侧详情面板。
     const camRight = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0))
@@ -1339,7 +1411,15 @@ export class UniverseScene {
     camRight.normalize()
     this.focusOffset.copy(camRight).multiplyScalar(-this.focusDistance * 0.4)
     this.focusTarget.copy(world).add(this.focusOffset)
+    // 立刻把轨道控制的目标点也挪过来：聚焦动画每帧用「相机 - 目标点」重新求相机位置，
+    // 若目标点还留在上一个天体上（比如从木星跳到木卫一），这个方向会指向错误的一侧，
+    // 相机会绕到卫星的夜半球去——之前木卫一近景全黑就是这个原因。
+    this.controls.target.copy(this.focusTarget)
     this.followId = id
+    // 卫星轨道导引：聚焦行星时显示它的卫星轨道，聚焦卫星时显示母行星的卫星轨道；
+    // 没有卫星的天体（水星、金星、火星、太阳）则隐藏所有导引线。
+    const holder = node.def.kind === 'moon' ? node.def.parent ?? null : node.def.id
+    this.moonGuideParent = holder !== null && this.moonParents.has(holder) ? holder : null
     this.focusing = true
   }
 
@@ -1371,6 +1451,7 @@ export class UniverseScene {
     if (dir.lengthSq() < 1e-6) return
     dir.normalize()
     this.followId = null
+    this.moonGuideParent = null
     this.focusing = false
     this.controls.target.copy(this.camera.position).add(dir.multiplyScalar(1000))
   }

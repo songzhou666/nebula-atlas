@@ -22,27 +22,22 @@ export interface BodyDef {
   texture: string
   blurb: string
   fact: string
+  /** 卫星的母行星 id（只有 kind === 'moon' 时存在）。 */
+  parent?: string
 }
 
-export const BODIES = planetsData as unknown as BodyDef[]
+const RAW = planetsData as unknown as BodyDef[]
+
+/**
+ * 列表顺序：卫星紧跟在自己的母行星后面，方便图鉴成组浏览。
+ * 所以 JSON 里卫星写在数组末尾也不会错位。
+ */
+export const BODIES: BodyDef[] = RAW.filter((b) => b.kind !== 'moon').flatMap((p) => [
+  p,
+  ...RAW.filter((m) => m.parent === p.id),
+])
 
 /** 按 id 查找天体。 */
 export function bodyById(id: string): BodyDef | undefined {
   return BODIES.find((b) => b.id === id)
-}
-
-/** 判断一段文字是否在指名某个天体（中文名或英文名包含即命中）。 */
-export function matchBody(text: string): BodyDef | undefined {
-  const normalized = text.trim().toLowerCase()
-  if (normalized.length === 0) return undefined
-  return BODIES.find(
-    (b) => normalized.includes(b.name.toLowerCase()) || normalized.includes(b.en.toLowerCase()),
-  )
-}
-
-/** 按与输入文字的相关度排序天体，用于"猜你想看"推荐。 */
-export function suggestBodies(text: string, limit = 3): BodyDef[] {
-  const hit = matchBody(text)
-  if (hit) return [hit, ...BODIES.filter((b) => b.id !== hit.id).slice(0, limit - 1)]
-  return BODIES.filter((b) => b.kind !== 'star').slice(0, limit)
 }

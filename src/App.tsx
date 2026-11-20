@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import { UniverseScene } from './three/UniverseScene'
-import { bodyById } from './data/bodies'
+import { bodyById, BODIES } from './data/bodies'
 import { DetailPanel } from './ui/DetailPanel'
 import { CatalogPanel } from './ui/CatalogPanel'
 
@@ -92,7 +92,7 @@ export default function App(): ReactElement {
             {catalogOpen ? '隐藏图鉴' : '图鉴'}
           </button>
           <span>2034 颗亮星</span>
-          <span>10 个天体</span>
+          <span>{BODIES.length} 个天体</span>
         </div>
       </header>
 

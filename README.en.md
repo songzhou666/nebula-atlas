@@ -1,10 +1,12 @@
 # Solar System Atlas (太阳系图鉴)
 
-An interactive solar system driven by real data: the Sun, eight planets, the Moon and two comets, layered with the HYG bright-star catalog and a real Milky Way panorama.
+An interactive solar system driven by real data: the Sun, eight planets, the Moon, six large planetary moons and two comets, layered with the HYG bright-star catalog and a real Milky Way panorama.
 
 [中文](README.md) | English
 
-> **About sizes**: body sizes are **schematic, not to real scale** — radii are compressed with a 0.82 power: Earth = 1.85, Jupiter/Earth = 7.13 (real 10.97), Mars 0.60 (real 0.53); the Moon gets an extra ×0.78, putting the Moon/Earth radius ratio at 0.269 ≈ the real 0.273. The Sun is capped at 17, otherwise it would swallow Mercury's orbit.
+> **About sizes**: body sizes are **schematic, not to real scale** — radii are compressed with a 0.82 power: Earth = 1.85, Jupiter/Earth = 7.13 (real 10.97), Mars 0.60 (real 0.53); moons get an extra ×0.78, putting the Moon/Earth radius ratio at 0.269 ≈ the real 0.273. The Sun is capped at 17, otherwise it would swallow Mercury's orbit.
+>
+> **About moon orbits**: Callisto's real orbital radius is 27× Jupiter's radius — to scale it would reach Saturn's orbit, so moon orbits are compressed to 1.55–2.9× the parent's radius (ordering preserved). Moons also use their own 0.3 time multiplier (Io takes about 5.9 s per orbit); with the planetary 6.1 multiplier Io would loop in 0.29 s and strobe. The Earth–Moon pair keeps the planetary multiplier so a year still contains 13.37 lunations.
 >
 > **About time**: rotation and revolution are both derived from the real periods, but with different multipliers (spin 0.25, orbit 6.1), so scene time is compressed 24.4× overall. Relative rates between bodies match reality exactly; only the spin : orbit ratio is scaled down globally — otherwise Earth would spin once every 0.16 s and blur into a smear.
 >
@@ -24,13 +26,13 @@ Mobile (390×844):
 
 ## Features
 
-- **Solar system**: Sun, eight planets and the Moon, with parameters from NASA NSSDC (radius, mass, distance from the Sun, rotation/orbital period, surface temperature, surface gravity, moon count).
+- **Solar system**: the Sun, eight planets, the Moon, Io, Europa, Ganymede, Callisto, Titan and Triton, with parameters from NASA NSSDC (radius, mass, distance from the Sun/parent, rotation/orbital period, surface temperature, surface gravity, moon count). Every moon is tidally locked; Triton orbits retrograde.
 - **Comets**: Halley 1P (inclination 162.3°, retrograde, 76-year period) and Encke 2P (inclination 11.8°, prograde, 3.30 years), with real perihelion/aphelion; the ion tail points strictly anti-sunward, while the dust tail inherits the comet's local orbital velocity — curved near perihelion, straighter near aphelion.
 - **Real sky**: an 8k Milky Way panorama plus 2034 HYG bright stars placed by their true celestial directions.
-- **Atlas**: 10 bodies plus 2034 bright stars; stars are sorted brightest-first, paginated 60 per page, and "Turn to this star" aims the view at the selected one.
+- **Atlas**: 16 bodies plus 2034 bright stars, with moons indented under their parent planet; stars are sorted brightest-first, paginated 60 per page, and "Turn to this star" aims the view at the selected one.
 - **Free camera**: drag to orbit, scroll to zoom, pause, reset view.
 - **Speed control**: independent sliders for orbital and spin speed — down to 0 or up.
-- **Click to focus**: click any body in the 3D view to fly to it; a detail panel opens on the right.
+- **Click to focus**: click any body in the 3D view to fly to it; a detail panel opens on the right. Focusing a planet reveals its moon orbit guides, and focusing a moon switches to a close-up vantage.
 - **Detail panel**: drag the texture sideways to spin the body, plus a parameter table and a fun fact.
 - **Mobile friendly**: compact top bar, 2×2 control grid, full-screen atlas drawer and bottom-sheet detail panel on narrow screens.
 
@@ -62,7 +64,7 @@ src/
 
 ## Data sources
 
-- Planets and the Moon: NASA National Space Science Data Center (NSSDC)
+- Planets and moons: NASA National Space Science Data Center (NSSDC)
 - Comet orbits: JPL Small-Body Database (perihelion, aphelion, inclination and period of Halley 1P and Encke 2P)
 - Stars: HYG bright-star catalog, 2034 entries (name, constellation, magnitude, celestial direction, RGB)
-- Textures: [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0) — 2k planetary base maps plus lazy-loaded 4k maps, an 8k Saturn ring and an 8k Milky Way panorama; a procedural fallback is used if loading fails
+- Textures: planets, the Moon, the Milky Way and Saturn's rings come from [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0) — 2k base maps plus lazy-loaded 4k. Io, Europa, Ganymede and Callisto use official global mosaic samples from [USGS Astrogeology](https://astrogeology.usgs.gov/) (1024 px, Voyager + Galileo SSI, polar gaps filled). Titan has only a near-infrared near-global map and Triton no equirectangular global map at all, so those two are generated procedurally from their real surface traits (orange haze; mottled nitrogen-ice frost). A procedural texture is the fallback if any load fails.

@@ -29,10 +29,11 @@ function formatMass(body: BodyDef): string {
   return `${body.earthMasses.toFixed(3)} M⊕`
 }
 
-/** 格式化与太阳的距离。 */
+/** 格式化距离：行星用「百万 km · AU」，卫星用「距母星 N 万 km」。 */
 function formatDistance(body: BodyDef): string {
   if (body.kind === 'star') return '—'
-  if (body.kind === 'moon') return '距地球 38.44 万 km'
+  // 卫星的 distanceMillionKm 存的是到母星的距离，换算成万公里更直观。
+  if (body.kind === 'moon') return `${(body.distanceMillionKm * 100).toFixed(2)} 万 km`
   return `${body.distanceMillionKm} 百万 km · ${body.au} AU`
 }
 
@@ -118,12 +119,12 @@ export function DetailPanel({ body, onClose }: Props): ReactElement {
   const rows: Array<[string, string]> = [
     ['半径', formatRadius(body.radiusKm)],
     ['质量', formatMass(body)],
-    ['与太阳距离', formatDistance(body)],
+    [body.kind === 'moon' ? '距母星' : '与太阳距离', formatDistance(body)],
     ['自转周期', `${formatDays(body.rotationDays)}${body.retrograde ? '（逆向）' : ''}`],
     ['公转周期', body.kind === 'planet' || body.kind === 'moon' ? formatDays(body.orbitalDays) : '—'],
     ['表面温度', formatTemp(body)],
     ['表面重力', `${body.gravity} m/s²`],
-    ['卫星', `${body.moons} 颗`],
+    ['卫星', body.kind === 'moon' ? '—' : `${body.moons} 颗`],
   ]
 
   return (

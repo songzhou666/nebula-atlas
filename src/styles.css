@@ -366,6 +366,12 @@ body {
   border-color: var(--accent);
 }
 
+/* 卫星条目：缩进一级，视觉上从属于上面的母行星。
+   用双类名提高优先级——单类名写在 .catalog-row 之前会被它的 padding: 8px 覆盖。 */
+.catalog-row.catalog-row--moon {
+  padding-left: 26px;
+}
+
 .catalog-list {
   overflow-y: auto;
   min-height: 0;

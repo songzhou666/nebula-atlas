@@ -34,10 +34,30 @@ body {
 .scene-host {
   position: absolute;
   inset: 0;
+  /* 太阳眩光层的可调参数，由 Three.js 每帧写入。 */
+  --sun-x: 50%;
+  --sun-y: 50%;
+  --sun-a: 0;
 }
 
 .scene-host canvas {
   display: block;
+}
+
+/* 太阳眩光：仅贴在太阳附近的一小团暖色光晕，避免给整片深空蒙上灰调。 */
+.scene-host::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(
+    circle 9vmax at var(--sun-x) var(--sun-y),
+    rgba(255, 214, 156, calc(var(--sun-a) * 0.12)) 0%,
+    rgba(255, 168, 88, calc(var(--sun-a) * 0.04)) 40%,
+    rgba(255, 120, 40, 0) 72%
+  );
+  mix-blend-mode: screen;
 }
 
 /* ------------------------------------------------------------- 顶栏 */

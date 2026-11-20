@@ -38,24 +38,123 @@ interface BodyNode {
   parent?: BodyNode
   /** 行星环：独立于行星网格，避免跟着行星自转一起飞转。 */
   ring?: THREE.Mesh
+  /** 云层壳：独立自转，比本体略快，制造巨行星的大气流动感。 */
+  cloud?: THREE.Mesh
+  /** 云层自转累计角。 */
+  cloudAngle?: number
+  /** 夜半球城市灯光叠加层（ShaderMaterial + AdditiveBlending）。 */
+  night?: THREE.Mesh
+}
+
+/**
+ * 单个尾迹粒子：从彗头释放后独立运动、随时间变暗消散。
+ * 正因为粒子不跟随彗头，尾巴才会像飞机尾迹一样“留在身后”。
+ */
+interface TailParticle {
+  age: number
+  life: number
+  px: number
+  py: number
+  pz: number
+  vx: number
+  vy: number
+  vz: number
+  r: number
+  g: number
+  b: number
+}
+
+/**
+ * 彗星：彗头光点 + 两条粒子池尾巴。
+ * 离子尾细、直、严格背向太阳；尘埃尾宽、沿轨道后方弯曲。
+ * 轨道为椭圆，越靠近太阳（近日点）尾巴越长越亮。
+ */
+interface Comet {
+  head: THREE.Sprite
+  ion: THREE.Points
+  dust: THREE.Points
+  ionGeo: THREE.BufferGeometry
+  dustGeo: THREE.BufferGeometry
+  ionPos: Float32Array
+  ionCol: Float32Array
+  dustPos: Float32Array
+  dustCol: Float32Array
+  ionPool: TailParticle[]
+  dustPool: TailParticle[]
+  cursorIon: number
+  cursorDust: number
+  emitIon: number
+  emitDust: number
+  orbitRadius: number
+  /** 轨道偏心率（0 为圆）。 */
+  ecc: number
+  angle: number
+  speed: number
+  tilt: number
+  prev: THREE.Vector3
 }
 
 const STARS = starsData as unknown as StarDef[]
 
-/** 显示半径：幂律压缩（指数 0.55）保留行星层级，太阳再单独截断。 */
+/**
+ * 显示半径：幂律压缩（指数 0.82，地球基准 1.85）。
+ * 指数越接近 1 越贴近真实比例；取 0.82 时：
+ * 木星/地球 = 7.13（真实 10.97）、土星 6.14（9.14）、天王星 3.10（3.98）、
+ * 火星 0.60（0.53）、水星 0.46（0.38）——由内到外的量级关系全部正确，
+ * 巨行星被压缩约三分之一，内行星最多放大 19%，换取默认视距下都能看见。
+ * 太阳按 17 截断：裸算半径 87，会把水星轨道（24.3）整个包进太阳本体里；
+ * 截到 17 后水星轨道仍在太阳表面之外 7 个场景单位，同时太阳直径仍比木星大 29%，
+ * 不会出现「木星和太阳一样大」的观感。
+ */
 function displayRadius(radiusKm: number): number {
   const ratio = radiusKm / 6371
-  return Math.min(12, 2.4 * Math.pow(ratio, 0.55))
+  return Math.min(17, 1.85 * Math.pow(ratio, 0.82))
 }
 
-/** 卫星显示半径：在压缩基础上再收紧，避免出现"月球和地球差不多大"的观感。 */
+/**
+ * 卫星显示半径：在同一个幂律上再乘 0.78。
+ * 幂律对小球是放大的（月球裸算 0.345 倍地球），乘 0.78 后落到 0.269，
+ * 与真实的地月半径比 0.273 只差 1.4%——这也是用户最容易察觉的一组比例。
+ */
 function satelliteRadius(radiusKm: number): number {
-  return displayRadius(radiusKm) * 0.7
+  return displayRadius(radiusKm) * 0.78
 }
 
 /** 轨道半径：把天文单位映射到场景单位，内行星要留出太阳本体之外的空间。 */
 function orbitRadius(au: number): number {
   return 20 + au * 11
+}
+
+/** 生成巨行星云带贴图：水平条带 + 随机亮度，用 alpha 通道勾出云带形状。 */
+function cloudTexture(): THREE.CanvasTexture {
+  const w = 512
+  const h = 256
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')!
+  // 背景必须透明，否则云层球会变成不透明的黑色壳。
+  ctx.clearRect(0, 0, w, h)
+  let seed = 7
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
+  }
+  let y = 0
+  while (y < h) {
+    const band = 6 + rand() * 22
+    const bright = 90 + rand() * 120
+    const grad = ctx.createLinearGradient(0, y, 0, y + band)
+    grad.addColorStop(0, 'rgba(255,255,255,0)')
+    grad.addColorStop(0.5, `rgba(255,255,255,${bright / 255})`)
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, y, w, band)
+    y += band + 2 + rand() * 10
+  }
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
 }
 
 /**
@@ -64,6 +163,32 @@ function orbitRadius(au: number): number {
  * 与真实自转周期的相对关系保持一致，视觉上又不至于飞转。
  */
 const SPIN_TIME_SCALE = 0.25
+
+/**
+ * 公转时间倍率：2π / 公转周期（天）× 该系数。
+ * 自转与公转必须用不同的倍率：0.25 让地球 4 秒转一圈（看得清），
+ * 6.1 让地球 60 秒公转一周（看得见位置变化）。两者之比 24.4
+ * 就是「自转/公转」真实比例被整体压缩的倍数——所有天体压缩同一个常数，
+ * 因此行星之间的相对速率关系仍然精确（水星/地球/木星的自转公转比误差一致）。
+ * 若强行让比例等于真实值，地球需 0.16 秒转一圈（糊成一片），不具可看性。
+ */
+const ORBIT_TIME_SCALE = 6.1
+
+/** 各行星自转轴倾角（度），来自 NASA NSSDC 行星事实表。
+ * 天王星 97.8° = 几乎躺着转，是太阳系独一份。 */
+const AXIAL_TILT_DEG: Record<string, number> = {
+  sun: 7.25, mercury: 0.03, venus: 177.4, earth: 23.44, moon: 6.68,
+  mars: 25.19, jupiter: 3.13, saturn: 26.73, uranus: 97.77, neptune: 28.32,
+}
+
+/** 聚焦时升级用的 4k 高清贴图（原始 8k 已按 4096×2048 重采样，兼顾清晰度与流量）。 */
+const HIRES_TEXTURE: Record<string, string> = {
+  sun: '4k_sun.jpg',
+  jupiter: '4k_jupiter.jpg',
+  saturn: '4k_saturn.jpg',
+  mars: '4k_mars.jpg',
+  moon: '4k_moon.jpg',
+}
 
 /** 生成太阳光晕贴图。 */
 function glowTexture(): THREE.CanvasTexture {
@@ -100,6 +225,37 @@ function starSpriteTexture(): THREE.CanvasTexture {
   ctx.fillStyle = g
   ctx.fillRect(0, 0, size, size)
   return new THREE.CanvasTexture(canvas)
+}
+
+/**
+ * 把「高光强度图」反相重映射成「粗糙度图」。
+ * SolarsystemScope 的 specular map 中白色表示海洋（高光强）、黑色表示陆地（无高光）。
+ * 若直接当 roughnessMap 用，语义正好相反：陆地 roughness=0 会变成镜面，
+ * 相机视角里出现刺眼白点。这里反相并把海洋下限压到 0.38，
+ * 只保留海洋上一片宽阔柔和的反光，不出现镜面级硬高光。
+ */
+function roughnessFromSpecular(src: THREE.Texture): THREE.CanvasTexture | null {
+  const img = src.image as (HTMLImageElement | HTMLCanvasElement | undefined)
+  if (!img || !img.width) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = img.width
+  canvas.height = img.height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.drawImage(img as CanvasImageSource, 0, 0)
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < data.data.length; i += 4) {
+    const s = data.data[i]! / 255
+    const v = Math.round(255 * (0.38 + 0.62 * (1 - s)))
+    data.data[i] = v
+    data.data[i + 1] = v
+    data.data[i + 2] = v
+  }
+  ctx.putImageData(data, 0, 0)
+  const tex = new THREE.CanvasTexture(canvas)
+  // 粗糙度是数据贴图，不能按 sRGB 解码。
+  tex.colorSpace = THREE.NoColorSpace
+  return tex
 }
 
 /** 生成土星环贴图（径向条纹 + 透明度变化）。 */
@@ -140,6 +296,17 @@ export class UniverseScene {
   private readonly nodes = new Map<string, BodyNode>()
   private readonly pickables: THREE.Mesh[] = []
   private readonly starGroup = new THREE.Group()
+  /** 星点分层材质：记录基础透明度与相位，用于呼吸式闪烁。 */
+  private readonly starLayers: { mat: THREE.PointsMaterial; base: number; phase: number; speed: number }[] = []
+  /** 彗星列表。 */
+  private readonly comets: Comet[] = []
+  /** 开场推进动画状态。 */
+  private intro = false
+  private introT = 0
+  private readonly introFrom = new THREE.Vector3()
+  private readonly introTo = new THREE.Vector3()
+  /** 太阳在屏幕归一化坐标系的投影缓存，用于驱动 CSS 眩光层。 */
+  private readonly sunNdc = new THREE.Vector3()
   private readonly clock = new THREE.Clock()
   private raf = 0
   private paused = false
@@ -171,25 +338,35 @@ export class UniverseScene {
     this.renderer.toneMappingExposure = 1.0
     container.appendChild(this.renderer.domElement)
 
-    this.scene.background = new THREE.Color('#04060e')
+    // 太空底色用纯黑，保留深空那种巨大的漆黑与空洞感。
+    this.scene.background = new THREE.Color('#000000')
     this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 6000)
-    this.camera.position.set(0, 180, 400)
+    // 开场推进：从高处远处沿同一视线推近到默认侧视机位，避免终点被某颗行星挡住。
+    this.introFrom.set(560, 480, 860)
+    this.introTo.set(340, 210, 520)
+    this.camera.position.copy(this.introFrom)
+    this.intro = true
+    this.introT = 0
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement)
     this.controls.enableDamping = true
     this.controls.dampingFactor = 0.06
     this.controls.minDistance = 8
     this.controls.maxDistance = 1400
+    // 开场期间锁住交互，避免用户一上来就打乱运镜。
+    this.controls.enabled = false
 
     this.buildLights()
+    this.buildMilkyway()
     this.buildStarfield()
     this.buildBodies()
+    this.buildComets()
 
     this.composer = new EffectComposer(this.renderer)
     this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.composer.setSize(width, height)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.4, 0.32)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.42, 0.34, 0.5)
     this.composer.addPass(this.bloom)
     this.composer.addPass(new OutputPass())
 
@@ -204,13 +381,53 @@ export class UniverseScene {
     this.scene.add(new THREE.AmbientLight(0x33415c, 0.5))
   }
 
+  /**
+   * 背景银河：一个极大的内表面球，贴 SolarsystemScope 的真实银河全景图（8192×4096 等距柱状）。
+   * 图像本身自带真实星点与银河尘埃带，取代原先程序化生成的噪点银河——
+   * 程序化方案在贴图左右边界无法真正闭合，旋转时会出现接缝。
+   * 挂在 starGroup 下随星点一起极慢旋转，避免背景和星空各转各的。
+   */
+  private buildMilkyway(): void {
+    const geo = new THREE.SphereGeometry(2800, 64, 48)
+    const mat = new THREE.MeshBasicMaterial({
+      side: THREE.BackSide,
+      // 初始必须纯黑：贴图未加载完就显示灰色会先闪一帧灰底板。
+      color: new THREE.Color(0x000000),
+      depthWrite: false,
+    })
+    const loader = new THREE.TextureLoader()
+    // 移动端用 4k：8192×4096 的 RGBA 贴图要占 130MB 以上显存，手机 GPU 容易直接失败。
+    const file = Math.min(window.innerWidth, window.innerHeight) < 700 ? '4k_stars_milky_way.jpg' : '8k_stars_milky_way.jpg'
+    loader.load(`./textures/${file}`, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      // 等距柱状天球贴图必须横向 Repeat，保证接缝处插值连续。
+      tex.wrapS = THREE.RepeatWrapping
+      tex.wrapT = THREE.ClampToEdgeWrapping
+      tex.anisotropy = 8
+      mat.map = tex
+      // 这张全景图本身极暗（平均亮度约 1/255，银道带也才 3/255），
+      // 经 sRGB 解码后线性值还要再低一个数量级，不提亮几乎看不见。
+      // 6 倍时银道带落在 10~20/255，既有层次又不会把星点糊成一片；
+      // 更亮的星点由 ACES 的高光肩部压缩，不会硬切成白块。
+      mat.color.setScalar(6)
+      mat.needsUpdate = true
+    })
+    this.starGroup.add(new THREE.Mesh(geo, mat))
+  }
+
   /** 用 HYG 亮星生成三层点云，按星等区分大小。 */
   private buildStarfield(): void {
     const sprite = starSpriteTexture()
+    // 恒星统一推到远景球壳上：HYG 的 xyz 是秒差距，若按同比例放进场景，
+    // 最近的恒星（比邻星 1.3 pc）只有 1 个场景单位，会落在太阳系内部，
+    // 变成一堆穿插在行星之间的光点。只保留方向、统一放到远方，
+    // 恒星退化为纯背景（半径 2400，天球银河壳在 2800）。
+    const SHELL = 2400
+    // 尺寸改成像素单位（sizeAttenuation=false）：背景恒星不该随镜头远近变大变小。
     const layers = [
-      { max: 2.0, size: 2.6 },
-      { max: 4.0, size: 1.7 },
-      { max: 99, size: 1.1 },
+      { max: 2.0, size: 3.2, alpha: 0.9 },
+      { max: 4.0, size: 2.2, alpha: 0.6 },
+      { max: 99, size: 1.3, alpha: 0.4 },
     ]
     layers.forEach((layer, index) => {
       const lower = index === 0 ? -1 : layers[index - 1]!.max
@@ -220,9 +437,10 @@ export class UniverseScene {
       const colors = new Float32Array(picked.length * 3)
       picked.forEach((star, i) => {
         const [x, y, z] = star.xyz
-        positions[i * 3] = x * 0.9
-        positions[i * 3 + 1] = y * 0.9
-        positions[i * 3 + 2] = z * 0.9
+        const len = Math.hypot(x, y, z) || 1
+        positions[i * 3] = (x / len) * SHELL
+        positions[i * 3 + 1] = (y / len) * SHELL
+        positions[i * 3 + 2] = (z / len) * SHELL
         colors[i * 3] = star.rgb[0]
         colors[i * 3 + 1] = star.rgb[1]
         colors[i * 3 + 2] = star.rgb[2]
@@ -234,11 +452,18 @@ export class UniverseScene {
         size: layer.size,
         map: sprite,
         vertexColors: true,
-        sizeAttenuation: true,
+        sizeAttenuation: false,
         transparent: true,
-        opacity: 0.95,
+        opacity: layer.alpha,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+      })
+      // 记录每层的基础透明度与相位，animate 里做呼吸式闪烁。
+      this.starLayers.push({
+        mat,
+        base: layer.alpha,
+        phase: index * 2.1,
+        speed: 0.6 + index * 0.35,
       })
       this.starGroup.add(new THREE.Points(geo, mat))
     })
@@ -268,6 +493,63 @@ export class UniverseScene {
           material.map = tex
           material.color.set('#ffffff')
           material.needsUpdate = true
+          // 地球：额外加载 normal map（山脉立体感）与 specular map（海洋反光）。
+          if (def.id === 'earth') {
+            loader.load('./textures/2k_earth_normal_map.jpg', (nTex) => {
+              nTex.colorSpace = THREE.SRGBColorSpace
+              material.normalMap = nTex
+              material.normalScale.set(0.85, 0.85)
+              material.needsUpdate = true
+            })
+            loader.load('./textures/2k_earth_specular_map.jpg', (sTex) => {
+              // specular map 白色=海洋高光、黑色=陆地，必须反相后才能当粗糙度图用，
+              // 否则陆地变成镜面，会在相机视角里出现刺眼反光点。
+              const rough = roughnessFromSpecular(sTex)
+              if (rough) {
+                material.roughnessMap = rough
+                material.roughness = 1.0
+                // 显式声明 uv2 之外的贴图槽，改变贴图集合后需要重新编译材质。
+                material.needsUpdate = true
+              } else {
+                material.roughness = 0.95
+              }
+              material.metalness = 0.0
+              material.needsUpdate = true
+            })
+          }
+          // 月球：加 normal map，让陨石坑有光照立体感。
+          if (def.id === 'moon') {
+            loader.load('./textures/2k_moon_normal_map.jpg', (nTex) => {
+              nTex.colorSpace = THREE.SRGBColorSpace
+              material.normalMap = nTex
+              material.normalScale.set(1.0, 1.0)
+              material.needsUpdate = true
+            })
+          }
+          // 金星：被 50km 厚硫酸云完全包裹，从太空根本看不到地表。
+          // 替换 daymap 为 atmosphere 贴图（SolarsystemScope 提供），
+          // 外加一层半透明 cloud sphere（作为 mesh 子对象，随本体自转）增加轻微大气扰动。
+          if (def.id === 'venus') {
+            loader.load('./textures/2k_venus_atmosphere.jpg', (atmTex) => {
+              atmTex.colorSpace = THREE.SRGBColorSpace
+              material.map = atmTex
+              material.needsUpdate = true
+              // 大气反射率高、近乎漫反射，降低 roughness 到 0.7 更像真实硫酸云。
+              material.roughness = 0.7
+            })
+            const venusCloud = new THREE.Mesh(
+              new THREE.SphereGeometry(radius * 1.02, 48, 32),
+              new THREE.MeshStandardMaterial({
+                color: 0xffd9a8,
+                transparent: true,
+                opacity: 0.25,
+                depthWrite: false,
+                roughness: 1,
+                metalness: 0,
+              }),
+            )
+            mesh.add(venusCloud)
+          }
         },
         undefined,
         () => {
@@ -278,17 +560,31 @@ export class UniverseScene {
 
       const isSun = def.kind === 'star'
       const isMoon = def.kind === 'moon'
+
       const node: BodyNode = {
         def,
         mesh,
         displayRadius: radius,
         orbitRadius: isSun ? 0 : isMoon ? 0 : orbitRadius(def.au),
         angle: Math.random() * Math.PI * 2,
-        spin: (Math.PI * 2 / Math.max(def.rotationDays, 0.2)) * SPIN_TIME_SCALE * (def.retrograde ? -1 : 1),
-        orbitSpeed: isSun || isMoon ? 0 : (Math.PI * 2 / Math.max(def.orbitalDays, 1)) * 6.1,
+        // 自转速度：2π / 自转周期（天）× 时间缩放。
+        // 注意不要再按 retrograde 取负号：金星 177.4°、天王星 97.8° 的倾角本身
+        // 已经大于 90°，即"轴朝天"就代表逆行，再取负号会造成两次翻转、看起来反而顺行。
+        spin: (Math.PI * 2 / Math.max(def.rotationDays, 0.2)) * SPIN_TIME_SCALE,
+        orbitSpeed: isSun || isMoon ? 0 : (Math.PI * 2 / Math.max(def.orbitalDays, 1)) * ORBIT_TIME_SCALE,
       }
 
       if (isSun) {
+        // 太阳本体：贴 SolarsystemScope 的 2k_sun.jpg（有真实太阳黑子和日冕细节）
+        // 作为 MeshStandardMaterial 的 albedo 贴图，替换纯 emissive color 的塑料感。
+        const sunLoader = new THREE.TextureLoader()
+        sunLoader.load('./textures/2k_sun.jpg', (sunTex) => {
+          sunTex.colorSpace = THREE.SRGBColorSpace
+          material.map = sunTex
+          material.needsUpdate = true
+        })
+        // 光晕：保留程序化 radial gradient 圆形 Sprite + AdditiveBlending，
+        // 避免直接用长方形贴图产生"方形图"观感。
         const glow = new THREE.Sprite(
           new THREE.SpriteMaterial({
             map: glowTexture(),
@@ -298,7 +594,6 @@ export class UniverseScene {
             depthWrite: false,
           }),
         )
-        // 光晕约为太阳直径的 1.7 倍：保留明亮观感，又不会在聚焦内行星时糊满画面。
         glow.scale.setScalar(radius * 1.7)
         mesh.add(glow)
         material.emissive = new THREE.Color(def.color)
@@ -315,18 +610,26 @@ export class UniverseScene {
           side: THREE.DoubleSide,
           depthWrite: false,
           uniforms: {
-            uMap: { value: ringTexture() },
+            uMap: { value: new THREE.Texture() }, // 由下方 TextureLoader 异步加载替换
             uSunPos: { value: new THREE.Vector3(0, 0, 0) },
             uPlanetPos: { value: new THREE.Vector3() },
             uPlanetRadius: { value: radius },
+            uInner: { value: inner },
+            uOuter: { value: outer },
           },
           vertexShader: [
-            'varying vec2 vUv;',
+            'uniform float uInner;',
+            'uniform float uOuter;',
+            'varying float vRadial;',
             'varying vec3 vWorld;',
+            'varying vec3 vNormalW;',
             'void main() {',
-            '  vUv = uv;',
+            // 官方环贴图是「径向条带」：X 轴为内→外的径向距离，Y 轴为环绕方向。
+            // 因此不能用 RingGeometry 的平面 UV，必须自己按几何半径算出归一化径向坐标。
+            '  vRadial = clamp((length(position.xy) - uInner) / (uOuter - uInner), 0.0, 1.0);',
             '  vec4 wp = modelMatrix * vec4(position, 1.0);',
             '  vWorld = wp.xyz;',
+            '  vNormalW = normalize(mat3(modelMatrix) * normal);',
             '  gl_Position = projectionMatrix * viewMatrix * wp;',
             '}',
           ].join('\n'),
@@ -335,31 +638,77 @@ export class UniverseScene {
             'uniform vec3 uSunPos;',
             'uniform vec3 uPlanetPos;',
             'uniform float uPlanetRadius;',
-            'varying vec2 vUv;',
+            'varying float vRadial;',
             'varying vec3 vWorld;',
+            'varying vec3 vNormalW;',
             'void main() {',
-            '  vec4 tex = texture2D(uMap, vUv);',
-            '  vec3 N = normalize(vec3(0.0, 0.95, 0.31));',
-            '  vec3 L = normalize(vWorld - uSunPos);',
-            '  float diff = max(dot(N, L), 0.0);',
-            '  vec3 col = tex.rgb * (0.45 + 0.75 * diff);',
+            // 取条带中间行采样：X = 径向，Y = 环绕（该行在整圈上颜色一致）。
+            '  vec4 tex = texture2D(uMap, vec2(vRadial, 0.5));',
+            '  if (tex.a < 0.01) discard;',
+            '  vec3 L = normalize(uSunPos - vWorld);',
+            // 双面环：用绝对值让正反两面都受光，避免背面全黑。
+            '  float diff = 0.35 + 0.65 * abs(dot(normalize(vNormalW), L));',
             '  vec3 awayDir = normalize(uPlanetPos - uSunPos);',
             '  vec3 rel = vWorld - uPlanetPos;',
             '  float along = dot(rel, awayDir);',
             '  float perp = length(rel - awayDir * along);',
-            '  float shadow = (1.0 - smoothstep(uPlanetRadius * 1.05, uPlanetRadius * 2.1, perp))',
-            '    * smoothstep(0.0, uPlanetRadius * 0.7, along);',
-            '  col *= 1.0 - shadow * 0.92;',
+            // 本体阴影：仅当环点位于土星背光侧（along > 0）且轴向投影落入本体半径内才变暗。
+            '  float shadow = smoothstep(0.0, uPlanetRadius * 0.8, along)',
+            '    * (1.0 - smoothstep(uPlanetRadius * 0.95, uPlanetRadius * 1.15, perp));',
+            '  vec3 col = tex.rgb * diff * (1.0 - 0.9 * shadow);',
             '  gl_FragColor = vec4(col, tex.a);',
             '}',
           ].join('\n'),
         })
-        const ring = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 96), ringMaterial)
-        ring.rotation.x = -Math.PI / 2 + 0.32
+        // 192 段：近距离观察时环的外缘不会露出多边形棱角。
+        const ring = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 192), ringMaterial)
+        // 环与土星本体使用相同的 Euler YXZ 顺序，保证 rotation.x 轴向倾角语义一致。
+        ring.rotation.order = 'YXZ'
+        ring.rotation.x = -Math.PI / 2 // 初始水平，animate 里每帧加土星本体的 tilt
         // 环不挂在行星网格下：否则会跟随土星自转一起高速旋转。
         this.scene.add(ring)
         node.ring = ring
+
+        // 异步加载官方环 alpha 贴图（卡西尼环缝 + A/B/C 环密度差）。
+        const ringLoader = new THREE.TextureLoader()
+        ringLoader.load('./textures/8k_saturn_ring_alpha.png', (ringTex) => {
+          ringTex.colorSpace = THREE.SRGBColorSpace
+          // 径向条带只在中间行采样，纵向夹边避免上下边缘渗色。
+          ringTex.wrapS = THREE.ClampToEdgeWrapping
+          ringTex.wrapT = THREE.ClampToEdgeWrapping
+          ringTex.anisotropy = 8
+          ringTex.needsUpdate = true
+          ringMaterial.uniforms.uMap.value = ringTex
+        })
       }
+
+      // 巨行星云层：独立自转的半透明云带壳，转速略快于本体，制造大气流动感。
+      if (def.id === 'jupiter' || def.id === 'saturn') {
+        const cloud = new THREE.Mesh(
+          new THREE.SphereGeometry(radius * 1.02, 48, 32),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color('#ffffff'),
+            map: cloudTexture(),
+            transparent: true,
+            opacity: 0.4,
+            roughness: 1,
+            metalness: 0,
+            depthWrite: false,
+          }),
+        )
+        this.scene.add(cloud)
+        node.cloud = cloud
+        node.cloudAngle = Math.random() * Math.PI * 2
+      }
+
+      // 轴向倾角：Euler 必须用 'XYZ' 顺序。
+      // 'XYZ' 对应矩阵 Rx * Ry * Rz：自转（Ry）发生在天体自身坐标系里，
+      // 再由 Rx 把整根自转轴倾斜出去——这才是"轴倾斜、天体绕自己的轴自转"。
+      // 若用 'YXZ'（Ry * Rx），每帧增加 rotation.y 会让自转轴绕黄道面极点进动，
+      // 表现为轴在缓慢画圈，倾角方向不稳定。
+      const tiltDeg = AXIAL_TILT_DEG[def.id] ?? 0
+      mesh.rotation.order = 'XYZ'
+      mesh.rotation.x = THREE.MathUtils.degToRad(tiltDeg)
 
       this.scene.add(mesh)
       this.nodes.set(def.id, node)
@@ -367,16 +716,96 @@ export class UniverseScene {
       if (def.kind === 'planet') this.addOrbitLine(node.orbitRadius)
     }
 
-    // 把月球挂到地球下，使其跟随地球公转。
+    // ===== 地球专属增强：云层 + 夜半球城市灯光 =====
     const earth = this.nodes.get('earth')
+    if (earth) {
+      // 1) 独立云层壳：挂在 scene 下，animate 里每帧同步地球位置，
+      //    自转比本体快 25%（和木星土星一致），制造大气流动感。
+      const cloudLoader = new THREE.TextureLoader()
+      cloudLoader.load('./textures/2k_earth_clouds.jpg', (cTex) => {
+        cTex.colorSpace = THREE.SRGBColorSpace
+        const cloud = new THREE.Mesh(
+          new THREE.SphereGeometry(earth.displayRadius * 1.012, 48, 32),
+          new THREE.MeshStandardMaterial({
+            map: cTex,
+            transparent: true,
+            opacity: 0.55,
+            depthWrite: false,
+            roughness: 1,
+            metalness: 0,
+          }),
+        )
+        cloud.castShadow = false
+        cloud.receiveShadow = false
+        this.scene.add(cloud)
+        earth.cloud = cloud
+        earth.cloudAngle = Math.random() * Math.PI * 2
+      })
+
+      // 2) 夜半球城市灯光：ShaderMaterial 叠加层，AdditiveBlending，
+      //    在 lambert < 0.25 的背阳面渐显，昼夜交界 smoothstep 避免生硬。
+      const nightLoader = new THREE.TextureLoader()
+      nightLoader.load('./textures/2k_earth_nightmap.jpg', (nTex) => {
+        nTex.colorSpace = THREE.SRGBColorSpace
+        const nightMaterial = new THREE.ShaderMaterial({
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.FrontSide,
+          uniforms: {
+            uNightMap: { value: nTex },
+            uSunPos: { value: new THREE.Vector3(0, 0, 0) },
+          },
+          vertexShader: [
+            'varying vec2 vUv;',
+            'varying vec3 vNormal;',
+            'varying vec3 vWorld;',
+            'void main() {',
+            '  vUv = uv;',
+            '  vNormal = normalize(normalMatrix * normal);',
+            '  vec4 wp = modelMatrix * vec4(position, 1.0);',
+            '  vWorld = wp.xyz;',
+            '  gl_Position = projectionMatrix * viewMatrix * wp;',
+            '}',
+          ].join('\n'),
+          fragmentShader: [
+            'uniform sampler2D uNightMap;',
+            'uniform vec3 uSunPos;',
+            'varying vec2 vUv;',
+            'varying vec3 vNormal;',
+            'varying vec3 vWorld;',
+            'void main() {',
+            '  vec3 L = normalize(vWorld - uSunPos);',
+            '  float lambert = dot(vNormal, L);',
+            '  float nightFactor = 1.0 - smoothstep(-0.2, 0.25, lambert);',
+            '  vec3 nightCol = texture2D(uNightMap, vUv).rgb;',
+            '  // 城市灯光在完全背光处更亮，近昼夜交界处渐隐。',
+            '  vec3 col = nightCol * (0.5 + nightFactor * 0.7);',
+            '  gl_FragColor = vec4(col, nightFactor * 0.85);',
+            '}',
+          ].join('\n'),
+        })
+        const nightMesh = new THREE.Mesh(
+          new THREE.SphereGeometry(earth.displayRadius * 1.001, 48, 32),
+          nightMaterial,
+        )
+        this.scene.add(nightMesh)
+        // 存到 BodyNode 上，animate 里每帧同步位置与更新 sun uniform。
+        earth.night = nightMesh
+      })
+    }
+
+    // 月球挂在 scene 下而非 earth.mesh 下：避免月球跟着地球自转转一圈，
+    // 实现潮汐锁定（月球同一面永远朝向地球）。animate 里手动同步位置。
     const moon = this.nodes.get('moon')
     if (earth && moon) {
-      earth.mesh.add(moon.mesh)
-      // 月轨半径按地月两者的显示半径留出可见间隙，不再写死常数。
+      this.scene.add(moon.mesh)
       moon.orbitRadius = earth.displayRadius + moon.displayRadius + 1.2
-      moon.mesh.position.set(moon.orbitRadius, 0, 0)
+      moon.mesh.position.copy(earth.mesh.position).setX(earth.mesh.position.x + moon.orbitRadius)
       moon.parent = earth
-      moon.orbitSpeed = (Math.PI * 2 / 27.322) * 6.1
+      moon.orbitSpeed = (Math.PI * 2 / 27.322) * ORBIT_TIME_SCALE
+      // 潮汐锁定：月球不自转（rotation.y 不增加），同一面永远朝向地球。
+      moon.spin = 0
     }
   }
 
@@ -395,18 +824,293 @@ export class UniverseScene {
     this.scene.add(line)
   }
 
+  /** 生成两颗彗星：彗头光点 + 离子尾/尘埃尾粒子池，沿椭圆轨道绕太阳运行。 */
+  private buildComets(): void {
+    const sprite = starSpriteTexture()
+    // 轨道用真实彗星的近日点 q 与远日点 Q（JPL）：哈雷 1P q=0.586 AU / Q=35.1 AU，
+    // 恩克 2P q=0.336 AU / Q=4.08 AU。哈雷远日点已超出海王星轨道，会飞出太阳系再绕回来。
+    // 公转周期直接取真实值（哈雷 76.0 年 = 27759 天，恩克 3.30 年 = 1205 天），
+    // 再除以与行星相同的 ORBIT_TIME_SCALE——彗星和行星处在同一时间基准上，
+    // 两者周期之比 23.1 与真实一致。代价是哈雷在场景里几乎不动（约 75 分钟一圈），
+    // 这是 76 年真实周期的必然结果；恩克约 3.3 分钟一圈，负责提供可见的运动。
+    // 彗核要小、尾迹要细密：彗核只是一个小亮核（靠 bloom 出辉光），
+    // 尾迹靠「多而小」的粒子堆出连续感，而不是「少而大」的团块。
+    // 公转方向：哈雷轨道倾角 162.3°，是太阳系里著名的逆行彗星（dir = -1）；
+    // 恩克倾角 11.8°，与行星同向顺行（dir = +1）。
+    // 此前两颗彗星的位置公式 z 用 +sin（行星用 -sin），导致它们一律逆行。
+    const defs = [
+      { q: 0.586, Q: 35.1, tilt: 0.3, phase: 0.8, periodDays: 27759, dir: -1, head: 0.85, ionSize: 0.34, dustSize: 0.55 },
+      { q: 0.336, Q: 4.08, tilt: 0.14, phase: 0.5, periodDays: 1205, dir: 1, head: 0.72, ionSize: 0.3, dustSize: 0.48 },
+    ]
+    // 粒子池容量：按「发射率 × 寿命」估算，保证正常循环而不是互相顶替。
+    const ION_N = 900
+    const DUST_N = 1300
+    for (const d of defs) {
+      // 把真实近日点/远日点映射到场景半径，反推椭圆半长轴与偏心率。
+      const rMin = orbitRadius(d.q)
+      const rMax = orbitRadius(d.Q)
+      const a = (rMin + rMax) / 2
+      const ecc = (rMax - rMin) / (rMax + rMin)
+      const head = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: sprite,
+          color: new THREE.Color('#f4faff'),
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      )
+      head.scale.setScalar(d.head)
+      head.frustumCulled = false
+
+      // 预分配粒子池，运行期只复用不新建，避免每帧产生垃圾。
+      const ionPool: TailParticle[] = []
+      for (let i = 0; i < ION_N; i++) {
+        ionPool.push({ age: 0, life: 1, px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, r: 0, g: 0, b: 0 })
+      }
+      const dustPool: TailParticle[] = []
+      for (let i = 0; i < DUST_N; i++) {
+        dustPool.push({ age: 0, life: 1, px: 0, py: 0, pz: 0, vx: 0, vy: 0, vz: 0, r: 0, g: 0, b: 0 })
+      }
+
+      const ionPos = new Float32Array(ION_N * 3)
+      const ionCol = new Float32Array(ION_N * 3)
+      const ionGeo = new THREE.BufferGeometry()
+      ionGeo.setAttribute('position', new THREE.BufferAttribute(ionPos, 3))
+      ionGeo.setAttribute('color', new THREE.BufferAttribute(ionCol, 3))
+      const ion = new THREE.Points(
+        ionGeo,
+        new THREE.PointsMaterial({
+          size: d.ionSize,
+          map: sprite,
+          vertexColors: true,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          sizeAttenuation: true,
+        }),
+      )
+      ion.frustumCulled = false
+
+      const dustPos = new Float32Array(DUST_N * 3)
+      const dustCol = new Float32Array(DUST_N * 3)
+      const dustGeo = new THREE.BufferGeometry()
+      dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3))
+      dustGeo.setAttribute('color', new THREE.BufferAttribute(dustCol, 3))
+      const dust = new THREE.Points(
+        dustGeo,
+        new THREE.PointsMaterial({
+          size: d.dustSize,
+          map: sprite,
+          vertexColors: true,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          sizeAttenuation: true,
+        }),
+      )
+      dust.frustumCulled = false
+
+      // 初始位置，供切向差分使用。z 取负号与行星一致，dir 决定顺行/逆行。
+      const r0 = a * (1 - ecc * ecc) / (1 + ecc * Math.cos(d.phase))
+      const prev = new THREE.Vector3(Math.cos(d.phase) * r0, Math.sin(d.phase) * r0 * d.tilt, -Math.sin(d.phase) * r0)
+      head.position.copy(prev)
+
+      this.scene.add(head)
+      this.scene.add(ion)
+      this.scene.add(dust)
+      this.comets.push({
+        head,
+        ion,
+        dust,
+        ionGeo,
+        dustGeo,
+        ionPos,
+        ionCol,
+        dustPos,
+        dustCol,
+        ionPool,
+        dustPool,
+        cursorIon: 0,
+        cursorDust: 0,
+        emitIon: 0,
+        emitDust: 0,
+        orbitRadius: a,
+        ecc,
+        angle: d.phase,
+        // 平均角速度 n = dir × 2π / 场景周期；场景周期 = 真实天数 / ORBIT_TIME_SCALE。
+        // dir = +1 与行星同向（顺行），-1 为逆行。
+        speed: (d.dir * Math.PI * 2) / (d.periodDays / ORBIT_TIME_SCALE),
+        tilt: d.tilt,
+        prev,
+      })
+    }
+  }
+
+  /** 释放一个离子尾粒子：严格沿背日方向飞出，几乎不继承轨道切向速度，故尾巴是直的。 */
+  private spawnIon(c: Comet, anti: THREE.Vector3): void {
+    const p = c.ionPool[c.cursorIon]!
+    c.cursorIon = (c.cursorIon + 1) % c.ionPool.length
+    const speed = 7 + Math.random() * 3.5
+    p.age = 0
+    p.life = 5 + Math.random() * 2.5
+    p.px = c.head.position.x
+    p.py = c.head.position.y
+    p.pz = c.head.position.z
+    p.vx = anti.x * speed + (Math.random() - 0.5) * 0.5
+    p.vy = anti.y * speed + (Math.random() - 0.5) * 0.5
+    p.vz = anti.z * speed + (Math.random() - 0.5) * 0.5
+    p.r = 0.28
+    p.g = 0.44
+    p.b = 0.58
+  }
+
+  /**
+   * 释放一个尘埃尾粒子：背日方向 + 继承彗星的轨道切向速度。
+   * 切向分量让先释放的粒子落在轨道后方，尾巴自然弯曲成“扫帚”形；
+   * 继承量取彗星当前的真实轨道速度，因此近日点弯曲、远日点趋直。
+   */
+  private spawnDust(c: Comet, anti: THREE.Vector3, tangent: THREE.Vector3, vOrb: number): void {
+    const p = c.dustPool[c.cursorDust]!
+    c.cursorDust = (c.cursorDust + 1) % c.dustPool.length
+    const radial = 2 + Math.random() * 1.2
+    p.age = 0
+    p.life = 7 + Math.random() * 3
+    p.px = c.head.position.x
+    p.py = c.head.position.y
+    p.pz = c.head.position.z
+    p.vx = anti.x * radial + tangent.x * vOrb + (Math.random() - 0.5) * 0.5
+    p.vy = anti.y * radial + tangent.y * vOrb + (Math.random() - 0.5) * 0.5
+    p.vz = anti.z * radial + tangent.z * vOrb + (Math.random() - 0.5) * 0.5
+    p.r = 0.4
+    p.g = 0.36
+    p.b = 0.26
+  }
+
+  /**
+   * 推进彗星：彗头沿椭圆轨道前进，同时向粒子池发射新粒子。
+   * 已释放的粒子按各自速度留在空间中运动、变暗，形成“留在身后”的拖尾。
+   */
+  private updateComets(dt: number): void {
+    const tangent = new THREE.Vector3()
+    const anti = new THREE.Vector3()
+    for (const c of this.comets) {
+      // 开普勒第二定律：dθ/dt = n·(1+e·cosθ)²/(1-e²)^1.5，近日点快、远日点慢。
+      // 与行星一致，乘以用户可调的公转速率倍率。
+      const n = c.speed
+      const e = c.ecc
+      const dTheta = (n * Math.pow(1 + e * Math.cos(c.angle), 2)) / Math.pow(1 - e * e, 1.5)
+      c.angle += dTheta * this.orbitScale * dt
+      // 椭圆轨道：r = a(1-e²)/(1+e·cosθ)，θ=0 为近日点。
+      const r = (c.orbitRadius * (1 - c.ecc * c.ecc)) / (1 + c.ecc * Math.cos(c.angle))
+      const x = Math.cos(c.angle) * r
+      const y = Math.sin(c.angle) * r * c.tilt
+      // z 取负号：与行星的 (cosθ, -sinθ) 同向，dir = -1 时才是逆行。
+      const z = -Math.sin(c.angle) * r
+      c.head.position.set(x, y, z)
+
+      // 轨道切向：与上一帧位置差分（含 dir 的符号），避免解析求导的复杂度。
+      tangent.set(x - c.prev.x, y - c.prev.y, z - c.prev.z)
+      if (tangent.lengthSq() < 1e-8) {
+        const s = c.speed < 0 ? -1 : 1
+        tangent.set(-Math.sin(c.angle) * s, Math.cos(c.angle) * c.tilt * s, -Math.cos(c.angle) * s)
+      }
+      tangent.normalize()
+      c.prev.set(x, y, z)
+
+      // 太阳在原点，背日方向即位置向量的单位向量。
+      anti.set(x, y, z).normalize()
+      // 彗星当前的轨道速度（场景单位/秒）：v = r·dθ/dt。
+      // 尘埃粒子继承这个切向速度，所以近日点尾巴明显弯曲、远日点接近直线，
+      // 这比用椭圆平均速度更贴近真实（也避免了彗星慢下来后粒子反而"跑到前面"）。
+      const vOrb = r * dTheta * this.orbitScale
+
+      // 越靠近近日点，喷发越剧烈（发射率更高）。
+      const rMin = c.orbitRadius * (1 - c.ecc)
+      const rMax = c.orbitRadius * (1 + c.ecc)
+      const activity = THREE.MathUtils.clamp((rMax - r) / Math.max(rMax - rMin, 1e-6), 0, 1)
+
+      // 累积发射：按速率往池子里放粒子，帧率高低都不影响尾巴浓度。
+      // 发射率与粒子寿命、池容量匹配（离子 58~134/s × 约 6s ≈ 800 粒，尘埃 44~106/s × 约 8.5s ≈ 900 粒）。
+      c.emitIon += (58 + 76 * activity) * dt
+      while (c.emitIon >= 1) {
+        this.spawnIon(c, anti)
+        c.emitIon -= 1
+      }
+      c.emitDust += (44 + 62 * activity) * dt
+      while (c.emitDust >= 1) {
+        this.spawnDust(c, anti, tangent, vOrb)
+        c.emitDust -= 1
+      }
+
+      // 离子尾：粒子惯性飞行 + 寿命末期快速变暗（additive 下趋黑即消散）。
+      for (let i = 0; i < c.ionPool.length; i++) {
+        const p = c.ionPool[i]!
+        p.age += dt
+        const fade = Math.max(0, 1 - p.age / p.life)
+        p.px += p.vx * dt
+        p.py += p.vy * dt
+        p.pz += p.vz * dt
+        c.ionPos[i * 3] = p.px
+        c.ionPos[i * 3 + 1] = p.py
+        c.ionPos[i * 3 + 2] = p.pz
+        const f = Math.pow(fade, 1.6)
+        c.ionCol[i * 3] = p.r * f
+        c.ionCol[i * 3 + 1] = p.g * f
+        c.ionCol[i * 3 + 2] = p.b * f
+      }
+      c.ionGeo.getAttribute('position').needsUpdate = true
+      c.ionGeo.getAttribute('color').needsUpdate = true
+
+      // 尘埃尾：同离子尾，但寿命更长、扩散更明显。
+      for (let i = 0; i < c.dustPool.length; i++) {
+        const p = c.dustPool[i]!
+        p.age += dt
+        const fade = Math.max(0, 1 - p.age / p.life)
+        p.px += p.vx * dt
+        p.py += p.vy * dt
+        p.pz += p.vz * dt
+        c.dustPos[i * 3] = p.px
+        c.dustPos[i * 3 + 1] = p.py
+        c.dustPos[i * 3 + 2] = p.pz
+        const f = Math.pow(fade, 1.4)
+        c.dustCol[i * 3] = p.r * f
+        c.dustCol[i * 3 + 1] = p.g * f
+        c.dustCol[i * 3 + 2] = p.b * f
+      }
+      c.dustGeo.getAttribute('position').needsUpdate = true
+      c.dustGeo.getAttribute('color').needsUpdate = true
+    }
+  }
+
   /** 绑定指针与尺寸事件。 */
   private bindEvents(): void {
     const dom = this.renderer.domElement
     dom.addEventListener('pointerdown', this.onPointerDown)
     dom.addEventListener('pointerup', this.onPointerUp)
     dom.addEventListener('pointermove', this.onPointerMove)
+    dom.addEventListener('wheel', this.onWheel, { passive: true })
     window.addEventListener('resize', this.onResize)
   }
 
   private onPointerDown = (e: PointerEvent): void => {
+    // 开场推进期间一旦用户操作，立即交还控制权。
+    this.skipIntro()
     this.downX = e.clientX
     this.downY = e.clientY
+  }
+
+  /** 滚轮同样跳过开场推进。 */
+  private onWheel = (): void => {
+    this.skipIntro()
+  }
+
+  /** 跳过开场推进：结束运镜并启用交互。 */
+  private skipIntro(): void {
+    if (!this.intro) return
+    this.intro = false
+    this.controls.enabled = true
+    this.controls.target.set(0, 0, 0)
   }
 
   /** 按下到抬起位移很小才算点击，避免旋转相机误触发选择。 */
@@ -452,6 +1156,15 @@ export class UniverseScene {
     this.raf = requestAnimationFrame(this.animate)
     const dt = Math.min(this.clock.getDelta(), 0.05)
 
+    // 开场推进：从远机位缓动飞到常规视角，结束或用户交互后交还控制权。
+    if (this.intro) {
+      this.introT += dt
+      const t = Math.min(1, this.introT / 4.2)
+      const ease = 1 - Math.pow(1 - t, 3)
+      this.camera.position.lerpVectors(this.introFrom, this.introTo, ease)
+      if (t >= 1) this.skipIntro()
+    }
+
     if (!this.paused) {
       // 公转与自转分别受各自滑动条控制。
       const spinDt = dt * this.spinScale
@@ -459,21 +1172,74 @@ export class UniverseScene {
       for (const node of this.nodes.values()) {
         node.mesh.rotation.y += node.spin * spinDt
         if (node.parent) {
+          // 月球：在 scene 下独立 mesh，公转位置 = 地球世界位置 + 公转偏移向量。
           node.angle += node.orbitSpeed * orbitDt
-          node.mesh.position.set(Math.cos(node.angle) * node.orbitRadius, 0, Math.sin(node.angle) * node.orbitRadius)
+          const earthPos = node.parent.mesh.position
+          node.mesh.position.set(
+            earthPos.x + Math.cos(node.angle) * node.orbitRadius,
+            earthPos.y + 0,
+            earthPos.z - Math.sin(node.angle) * node.orbitRadius,
+          )
+          // 潮汐锁定：月球自转周期等于公转周期，同一面永远朝向地球。
+          // 位置方向为 (cosθ, 0, -sinθ)，朝向地球需 ry = π + θ。
+          node.mesh.rotation.y = Math.PI + node.angle
         } else if (node.orbitSpeed > 0) {
           node.angle += node.orbitSpeed * orbitDt
-          node.mesh.position.set(Math.cos(node.angle) * node.orbitRadius, 0, Math.sin(node.angle) * node.orbitRadius)
+          // z 取负号：让公转方向与绕 +Y 轴自转（Ry 把 +X 转向 -Z）同向，
+          // 即所有行星都顺行公转+顺行自转，符合太阳系角动量方向。
+          node.mesh.position.set(Math.cos(node.angle) * node.orbitRadius, 0, -Math.sin(node.angle) * node.orbitRadius)
         }
-        // 行星环只跟随天体位置，不参与自转。
+        // 行星环跟随天体位置 + 轴向倾角，不参与自转。
         if (node.ring) {
           node.ring.position.copy(node.mesh.position)
+          // 环平面水平旋转 -PI/2 + 土星本体的轴向倾角 rotation.x。
+          node.ring.rotation.x = -Math.PI / 2 + node.mesh.rotation.x
           // 每帧同步土星位置，供着色器计算本体投影阴影。
           ;(node.ring.material as THREE.ShaderMaterial).uniforms.uPlanetPos.value.copy(node.mesh.position)
         }
+        // 云层壳跟随天体位置，自转比本体快 25%，看起来像大气在流动。
+        if (node.cloud) {
+          node.cloud.position.copy(node.mesh.position)
+          node.cloudAngle = (node.cloudAngle ?? 0) + node.spin * 1.25 * spinDt
+          // 云层与本体共用同一根自转轴：同步轴向倾角，否则云带会与本体贴图错位。
+          node.cloud.rotation.order = 'XYZ'
+          node.cloud.rotation.x = node.mesh.rotation.x
+          node.cloud.rotation.y = node.cloudAngle
+        }
+        // 夜半球叠加层：位置跟随地球，自转与本体同步（night map 需与 day map 对齐），
+        // 每帧更新着色器里的太阳方向，保证昼夜交界随地球公转正确移动。
+        if (node.night) {
+          node.night.position.copy(node.mesh.position)
+          node.night.rotation.copy(node.mesh.rotation)
+          const mat = node.night.material as THREE.ShaderMaterial
+          const sunPos = new THREE.Vector3()
+          // 太阳在原点（PointLight 在 scene 原点）。
+          sunPos.set(0, 0, 0)
+          mat.uniforms.uSunPos.value.copy(sunPos)
+        }
       }
+      this.updateComets(dt)
       this.starGroup.rotation.y += dt * 0.004
     }
+
+    // 星点呼吸式闪烁：各层相位错开，避免整片星空同步明灭。
+    const elapsed = this.clock.elapsedTime
+    for (const layer of this.starLayers) {
+      layer.mat.opacity = layer.base + Math.sin(elapsed * layer.speed + layer.phase) * 0.14
+    }
+
+    // 太阳眩光：把太阳的屏幕坐标与强度写到容器 CSS 变量，交给 ::before 叠加暖色光晕。
+    this.sunNdc.set(0, 0, 0).project(this.camera)
+    const sunVisible =
+      this.sunNdc.z < 1 && Math.abs(this.sunNdc.x) < 1.35 && Math.abs(this.sunNdc.y) < 1.35
+    const sunX = (this.sunNdc.x * 0.5 + 0.5) * 100
+    const sunY = (-this.sunNdc.y * 0.5 + 0.5) * 100
+    const sunStrength = sunVisible
+      ? Math.max(0, 1 - Math.hypot(this.sunNdc.x, this.sunNdc.y) * 0.7)
+      : 0
+    this.container.style.setProperty('--sun-x', `${sunX.toFixed(2)}%`)
+    this.container.style.setProperty('--sun-y', `${sunY.toFixed(2)}%`)
+    this.container.style.setProperty('--sun-a', sunStrength.toFixed(3))
 
     // 跟随选中的天体：目标点与相机同步平移，保持相对构图不漂移。
     if (this.followId) {
@@ -519,16 +1285,22 @@ export class UniverseScene {
     this.focusing = true
   }
 
+  /** 已经请求过 8k 贴图的天体，避免重复下载。 */
+  private readonly hiResAsked = new Set<string>()
+
   /** 相机聚焦到某天体。 */
   focusBody(id: string): void {
     const node = this.nodes.get(id)
     if (!node) return
+    // 聚焦时才按需拉取 8k 贴图：首屏不必为近看细节付出十几 MB 流量。
+    this.upgradeTexture(id)
     const world = new THREE.Vector3()
     node.mesh.getWorldPosition(world)
     this.focusTarget.copy(world)
     this.focusDistance = Math.max(9, node.displayRadius * 8)
-    // 相机放在天体的侧向（略偏外），这样能看到被太阳照亮的半球；
-    // 若放在正背阳面，行星会几乎全黑，贴图细节也就无从辨认。
+    // 相机放在天体的侧向（略偏向太阳），这样能看到被太阳照亮的半球；
+    // 若沿 outward（背离太阳）偏移，相机就落在夜半球一侧，行星几乎全黑，
+    // 之前木星聚焦后只剩一个黑盘就是这个符号写反导致的。
     const outward =
       world.lengthSq() > 0.01
         ? world.clone().normalize()
@@ -536,7 +1308,9 @@ export class UniverseScene {
     const side = new THREE.Vector3().crossVectors(outward, new THREE.Vector3(0, 1, 0))
     if (side.lengthSq() < 0.01) side.set(0, 0, 1)
     side.normalize()
-    const camDir = side.clone().add(outward.clone().multiplyScalar(0.45)).normalize()
+    // 侧向 1 + 朝日 0.45：相机与太阳方向的夹角约 66°，行星呈约 70% 受光的凸相，
+    // 既能看到完整贴图细节，又保留昼夜分界线，不会像正对太阳时那样完全扁平。
+    const camDir = side.clone().add(outward.clone().multiplyScalar(-0.45)).normalize()
     this.camera.position.copy(world.clone().add(camDir.multiplyScalar(this.focusDistance * 1.8)))
     // 构图偏移：让天体落在画面偏左，避开居中浮层卡片与右侧详情面板。
     const camRight = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0))
@@ -546,6 +1320,25 @@ export class UniverseScene {
     this.focusTarget.copy(world).add(this.focusOffset)
     this.followId = id
     this.focusing = true
+  }
+
+  /**
+   * 把天体的 2k 贴图替换成 8k 版本（仅在首次聚焦时触发）。
+   * @param id 天体 id；无 8k 版本的天体会直接跳过
+   */
+  private upgradeTexture(id: string): void {
+    const file = HIRES_TEXTURE[id]
+    if (!file || this.hiResAsked.has(id)) return
+    const node = this.nodes.get(id)
+    if (!node) return
+    this.hiResAsked.add(id)
+    new THREE.TextureLoader().load(textureUrl(file), (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = 8
+      const mat = node.mesh.material as THREE.MeshStandardMaterial
+      mat.map = tex
+      mat.needsUpdate = true
+    })
   }
 
   /**
@@ -583,6 +1376,7 @@ export class UniverseScene {
     dom.removeEventListener('pointerdown', this.onPointerDown)
     dom.removeEventListener('pointerup', this.onPointerUp)
     dom.removeEventListener('pointermove', this.onPointerMove)
+    dom.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('resize', this.onResize)
     this.controls.dispose()
     this.scene.traverse((obj) => {

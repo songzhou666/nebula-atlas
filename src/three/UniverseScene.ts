@@ -568,15 +568,8 @@ export class UniverseScene {
               material.needsUpdate = true
             })
           }
-          // 月球：加 normal map，让陨石坑有光照立体感。
-          if (def.id === 'moon') {
-            loader.load('./textures/2k_moon_normal_map.jpg', (nTex) => {
-              nTex.colorSpace = THREE.SRGBColorSpace
-              material.normalMap = nTex
-              material.normalScale.set(1.0, 1.0)
-              material.needsUpdate = true
-            })
-          }
+          // 月球不做法线贴图：Solar System Scope 没有提供月球法线图，
+          // 由亮度反推的伪法线会把月海压成一块块突兀的凸起，反而失真。
           // 金星：被 50km 厚硫酸云完全包裹，从太空根本看不到地表。
           // 替换 daymap 为 atmosphere 贴图（SolarsystemScope 提供），
           // 外加一层半透明 cloud sphere（作为 mesh 子对象，随本体自转）增加轻微大气扰动。

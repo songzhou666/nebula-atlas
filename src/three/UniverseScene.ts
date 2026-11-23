@@ -863,7 +863,7 @@ export class UniverseScene {
    * 背景银河：一个极大的内表面球，贴 SolarsystemScope 的真实银河全景图（8192×4096 等距柱状）。
    * 图像本身自带真实星点与银河尘埃带，取代原先程序化生成的噪点银河——
    * 程序化方案在贴图左右边界无法真正闭合，旋转时会出现接缝。
-   * 挂在 starGroup 下随星点一起极慢旋转，避免背景和星空各转各的。
+   * 与 HYG 星点一起挂在 starGroup 下，全天一起固定，不做地球式自转。
    */
   private buildMilkyway(): void {
     const geo = new THREE.SphereGeometry(2800, 64, 48)
@@ -885,9 +885,9 @@ export class UniverseScene {
       mat.map = tex
       // 这张全景图本身极暗（平均亮度约 1/255，银道带也才 3/255），
       // 经 sRGB 解码后线性值还要再低一个数量级，不提亮几乎看不见。
-      // 6 倍时银道带落在 10~20/255，既有层次又不会把星点糊成一片；
-      // 更亮的星点由 ACES 的高光肩部压缩，不会硬切成白块。
-      mat.color.setScalar(6)
+      // 4 倍时银道带落在 7~14/255：仍能看出尘埃带层次，但不再像
+      // 长曝光照片那样亮得不真实；更亮的星点交给 ACES 高光肩部压缩。
+      mat.color.setScalar(4)
       mat.needsUpdate = true
     })
     this.starGroup.add(new THREE.Mesh(geo, mat))
@@ -1908,7 +1908,8 @@ export class UniverseScene {
       }
       this.updateComets(dt)
       this.updateAsteroidBelt(dt)
-      this.starGroup.rotation.y += dt * 0.004
+      // 星空不再整体旋转：在太阳系内看恒星是固定不动的，
+      // 原来每帧慢慢转是地球夜空的效果，会削弱“身处太空”的真实感。
     }
 
     // 卫星轨道导引线：跟随母行星平移，且只在聚焦该行星系统时显示。

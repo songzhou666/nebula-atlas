@@ -70,12 +70,21 @@ export function DetailPanel({ body, onClose }: Props): ReactElement {
     ctx.fillStyle = '#05070f'
     ctx.fillRect(0, 0, w, h)
     if (!img || img.width === 0) return
+    // 与 3D 场景里的贴图校正保持一致：火星降饱和、海王星提亮去饱和，
+    // 否则详情面板里的缩略图会比球体艳一档。
+    ctx.filter =
+      body.id === 'mars'
+        ? 'saturate(0.8)'
+        : body.id === 'neptune'
+          ? 'saturate(0.7) brightness(1.04)'
+          : 'none'
     const tileW = (img.width / img.height) * h
     const offset = ((offsetRef.current % tileW) + tileW) % tileW
     for (let x = -offset; x < w; x += tileW) {
       ctx.drawImage(img, x, 0, tileW, h)
     }
-  }, [])
+    ctx.filter = 'none'
+  }, [body.id])
 
   // 切换天体时重新加载贴图并回到 0 相位。
   useEffect(() => {

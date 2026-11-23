@@ -82,7 +82,7 @@
     "tempRangeC": [-88, 58],
     "moons": 1,
     "gravity": 9.807,
-    "texture": "2k_earth_daymap.webp",
+    "texture": "earth_daymap_4k.webp",
     "blurb": "目前已知唯一存在生命的行星，表面 71% 被海洋覆盖，拥有适宜的大气与磁场保护。",
     "fact": "地球并非完美球体：赤道因自转略微隆起，极半径比赤道半径短约 21 公里。"
   },

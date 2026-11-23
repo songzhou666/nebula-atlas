@@ -225,14 +225,14 @@ function cloudTexture(): THREE.CanvasTexture {
 
 /**
  * 生成一块不规则陨石几何体。
- * 以二十面体为基底，按「顶点位置 + seed」计算确定性噪声，沿径向外推或内收，
- * 重算法线后保留平面着色——每块石头都是有棱有面的碎块，而不是标准多面体。
+ * 以高细分球面为基底，按「顶点位置 + seed」叠加高低频确定性噪声，
+ * 沿径向外推或内收，再做三轴拉伸；共享顶点保证法线连续，
+ * 因此得到的是有起伏的曲面碎块，而不是一堆硬棱多面体。
  * 噪声只依赖顶点坐标，位置重合的顶点会得到同样的位移，表面不会被撕开。
  *
  * @param seed 形状种子：不同 seed 得到不同轮廓
- * @param detail 二十面体细分级别，1 时 80 个面，足以表现岩石棱角
  */
-function asteroidGeometry(seed: number, detail = 1): THREE.BufferGeometry {
+function asteroidGeometry(seed: number): THREE.BufferGeometry {
   // 由 seed 取三个 0~1 的随机数，作为三个轴的拉伸系数：
   // 有的扁、有的长、有的接近球，避免 8 块石头只是同一颗球的随机噪声版本。
   const hash01 = (x: number) => {
@@ -242,16 +242,20 @@ function asteroidGeometry(seed: number, detail = 1): THREE.BufferGeometry {
   const stretchX = 0.78 + hash01(seed + 1.7) * 0.5
   const stretchY = 0.78 + hash01(seed + 3.1) * 0.5
   const stretchZ = 0.78 + hash01(seed + 4.9) * 0.5
-  const geo = new THREE.IcosahedronGeometry(1, detail)
+  // 用 16×12 细分的球面（约 384 个三角面）替代二十面体：
+  // 顶点是共享的，重算法线后表面连续过渡，变形出来的轮廓才有曲面感；
+  // 二十面体哪怕再加面，顶点法线仍是逐面断开，近看永远是一堆硬棱。
+  const geo = new THREE.SphereGeometry(1, 16, 12)
   const pos = geo.getAttribute('position') as THREE.BufferAttribute
   const v = new THREE.Vector3()
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i)
     // 位置哈希：同一坐标永远得到同一扰动，保证共享顶点同步位移。
-    const n = Math.sin(v.x * 12.9898 + v.y * 78.233 + v.z * 37.719 + seed) * 43758.5453
-    const jitter = n - Math.floor(n) - 0.5
-    // ±25% 的径向起伏 + 三轴拉伸：轮廓有凹有凸，不再是标准多面体。
-    v.multiplyScalar(1 + jitter * 0.5)
+    const n1 = Math.sin(v.x * 12.9898 + v.y * 78.233 + v.z * 37.719 + seed) * 43758.5453
+    const n2 = Math.sin(v.x * 4.123 + v.y * 7.771 + v.z * 9.317 + seed * 1.7) * 43758.5453
+    const jitter = (n1 - Math.floor(n1) - 0.5) * 0.65 + (n2 - Math.floor(n2) - 0.5) * 0.35
+    // 高低频叠加的径向起伏：大鼓包决定轮廓，小起伏负责表面皱褶。
+    v.multiplyScalar(1 + jitter * 0.55)
     v.set(v.x * stretchX, v.y * stretchY, v.z * stretchZ)
     pos.setXYZ(i, v.x, v.y, v.z)
   }
@@ -1572,11 +1576,11 @@ export class UniverseScene {
     const VARIANTS = 8
     const ROCKS = 700
     // 8 个几何体共用同一份材质，颜色差异靠实例颜色拉开。
+    // 关闭平面着色：曲面岩石需要连续法线，否则 384 个面仍会被拆成硬棱。
     const rockMaterial = new THREE.MeshStandardMaterial({
       map: asteroidTexture(),
       roughness: 1,
       metalness: 0.04,
-      flatShading: true,
     })
     const groups: { data: AsteroidRock[] }[] = Array.from({ length: VARIANTS }, () => ({ data: [] }))
     const color = new THREE.Color()
@@ -1594,7 +1598,7 @@ export class UniverseScene {
     }
     this.asteroidRockGroups = groups.map((group, index) => {
       const mesh = new THREE.InstancedMesh(
-        asteroidGeometry(1000 + index * 137, 1),
+        asteroidGeometry(1000 + index * 137),
         rockMaterial,
         Math.max(1, group.data.length),
       )
@@ -2028,11 +2032,24 @@ export class UniverseScene {
     camDir.y += 0.32
     camDir.normalize()
     this.camera.position.copy(world.clone().add(camDir.multiplyScalar(this.focusDistance * 1.8)))
-    // 构图偏移：让天体落在画面偏左，避开居中浮层卡片与右侧详情面板。
+    // 构图偏移：桌面端让天体偏左，避开右侧详情面板；手机端详情面板是底部抽屉，
+    // 改为横向居中、整体抬高到画面上半区。
+    // 偏移量必须按视场角换算：原来固定 0.4 倍机位距离，在竖屏上超过整个半屏宽度，
+    // 天体一聚焦就被推出画面，只能手转镜头才能找回来。
+    const vFov = THREE.MathUtils.degToRad(this.camera.fov)
+    const halfH = Math.tan(vFov / 2) * this.focusDistance
     const camRight = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0))
     if (camRight.lengthSq() < 0.01) camRight.set(1, 0, 0)
     camRight.normalize()
-    this.focusOffset.copy(camRight).multiplyScalar(-this.focusDistance * 0.4)
+    if (this.camera.aspect < 1) {
+      // 竖屏：相机 up = camRight × camDir；目标点下移，天体在画面里上移。
+      const camUp = new THREE.Vector3().crossVectors(camRight, camDir).normalize()
+      this.focusOffset.copy(camUp).multiplyScalar(-halfH * 0.55)
+    } else {
+      // 横屏：偏移不超过水平半宽的 50%，宽屏下与原来的 0.4 倍距离基本一致。
+      const halfW = halfH * this.camera.aspect
+      this.focusOffset.copy(camRight).multiplyScalar(-Math.min(halfW * 0.5, this.focusDistance * 0.4))
+    }
     this.focusTarget.copy(world).add(this.focusOffset)
     // 立刻把轨道控制的目标点也挪过来：聚焦动画每帧用「相机 - 目标点」重新求相机位置，
     // 若目标点还留在上一个天体上（比如从木星跳到木卫一），这个方向会指向错误的一侧，

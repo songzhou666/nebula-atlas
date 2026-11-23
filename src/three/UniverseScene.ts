@@ -127,6 +127,45 @@ function orbitRadius(au: number): number {
   return 20 + au * 11
 }
 
+/**
+ * 行星系统的实际占位半径：本体、行星环、最外层卫星轨道三者取最大。
+ * 土星环外径是本体半径的 2.3 倍，木星最外层的木卫四轨道达到木星半径的 2.75 倍，
+ * 这些「看不见的边界」比本体大得多，只按本体算间距会让卫星轨道扫进隔壁行星。
+ */
+function systemExtent(def: BodyDef): number {
+  const bodyRadius = displayRadius(def.radiusKm)
+  if (def.kind !== 'planet') return bodyRadius
+  let extent = bodyRadius
+  if (def.id === 'saturn') extent = Math.max(extent, bodyRadius * 2.3)
+  for (const moon of BODIES) {
+    if (moon.parent !== def.id) continue
+    const factor = MOON_ORBIT_FACTOR[moon.id] ?? 1.8
+    extent = Math.max(extent, bodyRadius * factor + satelliteRadius(moon.radiusKm))
+  }
+  return extent
+}
+
+/**
+ * 行星轨道半径表：真实 AU 映射优先，但相邻行星之间必须留出双方系统占位再外加 3 个单位的余量。
+ * 内行星按真实间距换算到场景里过窄（金星 27.95 与地球 31 只差 3.05，
+ * 而两者半径之和已有 3.62），公转时必然互相穿过，因此取两者中较大的半径。
+ */
+function planetOrbitRadii(): Map<string, number> {
+  const radii = new Map<string, number>()
+  // 从太阳表面起算：太阳本体半径已经占掉 17 个场景单位。
+  let prevRadius = 0
+  let prevExtent = displayRadius(695700)
+  for (const def of BODIES) {
+    if (def.kind !== 'planet') continue
+    const extent = systemExtent(def)
+    const radius = Math.max(orbitRadius(def.au), prevRadius + prevExtent + extent + 3)
+    radii.set(def.id, radius)
+    prevRadius = radius
+    prevExtent = extent
+  }
+  return radii
+}
+
 /** 生成巨行星云带贴图：水平条带 + 随机亮度，用 alpha 通道勾出云带形状。 */
 function cloudTexture(): THREE.CanvasTexture {
   const w = 512
@@ -524,6 +563,8 @@ export class UniverseScene {
   /** 创建太阳与各行星网格、轨道线与自转/公转参数。 */
   private buildBodies(): void {
     const loader = new THREE.TextureLoader()
+    // 一次性算好所有行星的轨道半径，保证相邻行星系统之间互不穿插。
+    const orbitRadii = planetOrbitRadii()
 
     for (const def of BODIES) {
       const radius = def.kind === 'moon' ? satelliteRadius(def.radiusKm) : displayRadius(def.radiusKm)
@@ -609,7 +650,7 @@ export class UniverseScene {
         def,
         mesh,
         displayRadius: radius,
-        orbitRadius: isSun ? 0 : isMoon ? 0 : orbitRadius(def.au),
+        orbitRadius: isSun || isMoon ? 0 : (orbitRadii.get(def.id) ?? orbitRadius(def.au)),
         angle: START_ANGLE[def.id] ?? 0,
         // 自转速度：2π / 自转周期（天）× 时间缩放。
         // 注意不要再按 retrograde 取负号：金星 177.4°、天王星 97.8° 的倾角本身
@@ -903,9 +944,12 @@ export class UniverseScene {
     // 公转方向：哈雷轨道倾角 162.3°，是太阳系里著名的逆行彗星（dir = -1）；
     // 恩克倾角 11.8°，与行星同向顺行（dir = +1）。
     // 此前两颗彗星的位置公式 z 用 +sin（行星用 -sin），导致它们一律逆行。
+    // 初始相位取远日点附近（π）：两颗彗星都从太阳系外缘向内运动，而不是凭空出现在行星之间。
+    // 哈雷远日点 35.1 AU 已在海王星轨道之外；恩克的真实轨道最远只到 4.08 AU（火星与木星之间），
+    // 这是它轨道的上限，因此它表现为从内太阳系外缘飞入。
     const defs = [
-      { q: 0.586, Q: 35.1, tilt: 0.3, phase: 0.8, periodDays: 27759, dir: -1, head: 0.85, ionSize: 0.34, dustSize: 0.55 },
-      { q: 0.336, Q: 4.08, tilt: 0.14, phase: 0.5, periodDays: 1205, dir: 1, head: 0.72, ionSize: 0.3, dustSize: 0.48 },
+      { q: 0.586, Q: 35.1, tilt: 0.3, phase: Math.PI + 0.08, periodDays: 27759, dir: -1, head: 0.85, ionSize: 0.34, dustSize: 0.55 },
+      { q: 0.336, Q: 4.08, tilt: 0.14, phase: Math.PI + 0.12, periodDays: 1205, dir: 1, head: 0.72, ionSize: 0.3, dustSize: 0.48 },
     ]
     // 粒子池容量：按「发射率 × 寿命」估算，保证正常循环而不是互相顶替。
     const ION_N = 900

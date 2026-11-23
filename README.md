@@ -30,7 +30,7 @@
 - **彗星**：哈雷 1P（倾角 162.3°，逆行，76 年周期）与恩克 2P（倾角 11.8°，顺行，3.30 年），轨道取真实近日点/远日点；离子尾严格背日，尘埃尾继承彗星当前的局部轨道速度，近日点弯曲、远日点趋直。
 - **真实天空**：8k 银河全景贴图 + HYG 2034 颗亮星，恒星按真实天区方向分布。
 - **图鉴**：16 个天体 + 2034 颗亮星，卫星缩进挂在母行星下方；恒星按星等从亮到暗排序、每页 60 条可翻页，点条目查看资料、一键转向该恒星。
-- **自由观察**：拖拽旋转、滚轮缩放，可暂停、复位视角。
+- **自由观察**：拖拽旋转、滚轮缩放，可暂停、复位视角；页面切到后台时自动停掉渲染循环，避免空转耗电。
 - **速度控制**：公转与自转各一条滑动条，可整体降速到 0，也可加速。
 - **点击定位**：在三维视图里点中任意天体即聚焦过去，右侧弹出详情面板；聚焦行星时显示该行星系的卫星轨道导引线，聚焦卫星时自动切到近景。
 - **详情面板**：天体贴图可横向拖动模拟自转，附参数表和一条冷知识。
@@ -40,7 +40,7 @@
 
 - Vite 8 + React 19 + TypeScript 7（strict）
 - Three.js 0.187：OrbitControls、EffectComposer / UnrealBloomPass、ShaderMaterial（土星环）、CanvasTexture、Sprite、Points
-- 贴图两级加载：2k 基础图随场景加载，聚焦时再懒加载 4k 高清图
+- 贴图两级加载：2k 基础图随场景加载，聚焦时再懒加载 4k 高清图；全部使用 WebP，体积约为原 JPG 的 45%
 - 全部本地计算，无后端、无 AI 接口
 
 ## 本地运行
@@ -67,4 +67,4 @@ src/
 - 行星与卫星参数：NASA National Space Science Data Center（NSSDC）
 - 彗星轨道：JPL Small-Body Database（哈雷 1P、恩克 2P 的近日点、远日点、倾角与周期）
 - 恒星：HYG 亮星星表，2034 颗（含名称、星座、星等、天区方向、RGB）
-- 贴图：行星、月球、银河与土星环来自 [Solar System Scope](https://www.solarsystemscope.com/textures/)（CC BY 4.0）——2k 基础图 + 聚焦懒加载的 4k；木卫一～木卫四取自 [USGS Astrogeology](https://astrogeology.usgs.gov/) 的官方全球镶嵌样图（1024 px，Voyager + Galileo SSI 合成，已裁掉南北极空洞）；土卫六只有近红外近全球图、海卫一没有等距圆柱全球图，这两颗按真实表面特征（橙色雾霾、氮冰火山斑驳）程序化生成。加载失败时统一用程序化纹理兜底。
+- 贴图：行星、月球、银河与土星环来自 [Solar System Scope](https://www.solarsystemscope.com/textures/)（CC BY 4.0）——2k 基础图 + 聚焦懒加载的 4k，均已转为 WebP；木卫一～木卫四取自 [USGS Astrogeology](https://astrogeology.usgs.gov/) 的官方全球镶嵌样图（1024 px，Voyager + Galileo SSI 合成，已裁掉南北极空洞）；土卫六只有近红外近全球图、海卫一没有等距圆柱全球图，这两颗按真实表面特征（橙色雾霾、氮冰火山斑驳）程序化生成。加载失败时统一用程序化纹理兜底。

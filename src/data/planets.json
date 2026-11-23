@@ -16,7 +16,7 @@
     "meanTempC": 5505,
     "moons": 0,
     "gravity": 274,
-    "texture": "2k_sun.jpg",
+    "texture": "2k_sun.webp",
     "blurb": "太阳系的中心恒星，占太阳系总质量的 99.86%。它是一颗 G 型主序星，核心通过氢聚变持续释放能量。",
     "fact": "光从太阳表面到达地球大约需要 8 分 20 秒。"
   },
@@ -38,7 +38,7 @@
     "tempRangeC": [-173, 427],
     "moons": 0,
     "gravity": 3.7,
-    "texture": "2k_mercury.jpg",
+    "texture": "2k_mercury.webp",
     "blurb": "最靠近太阳的行星，也是太阳系中最小的行星。表面布满陨石坑，昼夜温差超过 600°C。",
     "fact": "水星的一天（日出到日出）长达 176 个地球日，正好是它两年的长度。"
   },
@@ -60,7 +60,7 @@
     "tempRangeC": [452, 471],
     "moons": 0,
     "gravity": 8.87,
-    "texture": "2k_venus_surface.jpg",
+    "texture": "2k_venus_surface.webp",
     "blurb": "太阳系中最热的行星，浓厚的二氧化碳大气造成失控温室效应，表面被硫酸云覆盖。",
     "fact": "金星自转方向与其他行星相反，且自转比公转还慢——它的一天比一年更长。"
   },
@@ -82,7 +82,7 @@
     "tempRangeC": [-88, 58],
     "moons": 1,
     "gravity": 9.807,
-    "texture": "2k_earth_daymap.jpg",
+    "texture": "2k_earth_daymap.webp",
     "blurb": "目前已知唯一存在生命的行星，表面 71% 被海洋覆盖，拥有适宜的大气与磁场保护。",
     "fact": "地球并非完美球体：赤道因自转略微隆起，极半径比赤道半径短约 21 公里。"
   },
@@ -104,7 +104,7 @@
     "tempRangeC": [-173, 127],
     "moons": 0,
     "gravity": 1.62,
-    "texture": "2k_moon.jpg",
+    "texture": "2k_moon.webp",
     "blurb": "地球唯一的天然卫星，形成于约 45 亿年前一次巨大的撞击。",
     "fact": "月球正以每年约 3.8 厘米的速度远离地球。",
     "parent": "earth"
@@ -127,7 +127,7 @@
     "tempRangeC": [-153, 20],
     "moons": 2,
     "gravity": 3.72,
-    "texture": "2k_mars.jpg",
+    "texture": "2k_mars.webp",
     "blurb": "红色的氧化铁地表让它被称为「红色行星」，拥有太阳系最高的火山奥林帕斯山。",
     "fact": "奥林帕斯山高约 21.9 公里，是珠穆朗玛峰的两倍多。"
   },
@@ -149,7 +149,7 @@
     "tempRangeC": [-163, -108],
     "moons": 95,
     "gravity": 24.79,
-    "texture": "2k_jupiter.jpg",
+    "texture": "2k_jupiter.webp",
     "blurb": "太阳系最大的行星，质量是其他七颗行星总和的 2.5 倍。大红斑是持续数百年的巨型风暴。",
     "fact": "木星大红斑至少已存在 300 多年，宽度足以吞下整个地球。"
   },
@@ -171,7 +171,7 @@
     "tempRangeC": [-178, -113],
     "moons": 146,
     "gravity": 10.44,
-    "texture": "2k_saturn.jpg",
+    "texture": "2k_saturn.webp",
     "blurb": "以壮观光环闻名的气态巨行星，环由冰粒与岩石碎屑构成，宽数十万公里而厚度仅数十米。",
     "fact": "土星的平均密度比水还低——如果有足够大的海洋，它会浮在水面上。"
   },
@@ -193,7 +193,7 @@
     "tempRangeC": [-220, -197],
     "moons": 28,
     "gravity": 8.87,
-    "texture": "2k_uranus.jpg",
+    "texture": "2k_uranus.webp",
     "blurb": "自转轴几乎「躺」在公转轨道面上的冰巨星，像在轨道上侧滚前进。大气中的甲烷让它呈青绿色。",
     "fact": "天王星自转轴倾角约 98°，极区的一极会连续面对太阳约 42 年。"
   },
@@ -215,7 +215,7 @@
     "tempRangeC": [-218, -201],
     "moons": 16,
     "gravity": 11.15,
-    "texture": "2k_neptune.jpg",
+    "texture": "2k_neptune.webp",
     "blurb": "离太阳最远的行星，深蓝色来自大气中的甲烷。拥有太阳系最强的风暴，风速可超 2000 km/h。",
     "fact": "海王星是先被数学计算预测、之后才用望远镜找到的行星。"
   },
@@ -237,7 +237,7 @@
     "tempRangeC": [-183, -123],
     "moons": 0,
     "gravity": 1.796,
-    "texture": "1k_io.jpg",
+    "texture": "1k_io.webp",
     "blurb": "太阳系火山活动最剧烈的天体，400 多座活火山把表面染成硫磺的黄、橙、白。",
     "fact": "木卫一的火山羽流可喷到 300 公里高，是太阳系最高的「喷泉」。",
     "parent": "jupiter"
@@ -260,7 +260,7 @@
     "tempRangeC": [-223, -148],
     "moons": 0,
     "gravity": 1.314,
-    "texture": "1k_europa.jpg",
+    "texture": "1k_europa.webp",
     "blurb": "冰壳上布满纵横交错的褐色裂缝，冰层之下可能是一片深达 100 公里的液态海洋。",
     "fact": "木卫二冰下海洋的水量约为地球全部海洋的两倍。",
     "parent": "jupiter"
@@ -283,7 +283,7 @@
     "tempRangeC": [-203, -121],
     "moons": 0,
     "gravity": 1.428,
-    "texture": "1k_ganymede.jpg",
+    "texture": "1k_ganymede.webp",
     "blurb": "太阳系最大的卫星，比水星还大，表面是古老暗区与年轻亮沟槽的交错。",
     "fact": "木卫三是唯一拥有自身磁场的卫星，两极还有极光。",
     "parent": "jupiter"
@@ -306,7 +306,7 @@
     "tempRangeC": [-193, -108],
     "moons": 0,
     "gravity": 1.235,
-    "texture": "1k_callisto.jpg",
+    "texture": "1k_callisto.webp",
     "blurb": "太阳系撞击坑最密集的表面之一，几十亿年几乎没有地质活动，像一本保存完好的撞击记录。",
     "fact": "木卫四是伽利略四大卫星里离木星最远的一颗，也是辐射最弱的，被视为未来载人前哨的候选地。",
     "parent": "jupiter"
@@ -328,7 +328,7 @@
     "meanTempC": -179,
     "moons": 0,
     "gravity": 1.352,
-    "texture": "1k_titan.jpg",
+    "texture": "1k_titan.webp",
     "blurb": "唯一拥有浓厚大气层的卫星，橙色雾霾之下有河流、湖泊和降雨——只不过液体是甲烷。",
     "fact": "土卫六是太阳系里除地球外唯一表面存在稳定液体的天体。",
     "parent": "saturn"
@@ -351,7 +351,7 @@
     "tempRangeC": [-240, -230],
     "moons": 0,
     "gravity": 0.779,
-    "texture": "1k_triton.jpg",
+    "texture": "1k_triton.webp",
     "blurb": "太阳系唯一一颗大型逆行卫星，很可能是被海王星俘获的柯伊伯带天体，表面有氮气冰火山。",
     "fact": "海卫一的轨道正在缓慢收缩，几十亿年后它可能被海王星撕裂成一道新的行星环。",
     "parent": "neptune"

@@ -264,11 +264,11 @@ const AXIAL_TILT_DEG: Record<string, number> = {
 
 /** 聚焦时升级用的 4k 高清贴图（原始 8k 已按 4096×2048 重采样，兼顾清晰度与流量）。 */
 const HIRES_TEXTURE: Record<string, string> = {
-  sun: '4k_sun.jpg',
-  jupiter: '4k_jupiter.jpg',
-  saturn: '4k_saturn.jpg',
-  mars: '4k_mars.jpg',
-  moon: '4k_moon.jpg',
+  sun: '4k_sun.webp',
+  jupiter: '4k_jupiter.webp',
+  saturn: '4k_saturn.webp',
+  mars: '4k_mars.webp',
+  moon: '4k_moon.webp',
 }
 
 /** 生成太阳光晕贴图。 */
@@ -409,6 +409,8 @@ export class UniverseScene {
   private downX = 0
   private downY = 0
   private disposed = false
+  /** 页面是否可见：切到后台时挂起整条渲染管线，避免空转耗电。 */
+  private pageVisible = !document.hidden
 
   constructor(container: HTMLElement, cb: SceneCallbacks = {}) {
     this.container = container
@@ -482,7 +484,7 @@ export class UniverseScene {
     })
     const loader = new THREE.TextureLoader()
     // 移动端用 4k：8192×4096 的 RGBA 贴图要占 130MB 以上显存，手机 GPU 容易直接失败。
-    const file = Math.min(window.innerWidth, window.innerHeight) < 700 ? '4k_stars_milky_way.jpg' : '8k_stars_milky_way.jpg'
+    const file = Math.min(window.innerWidth, window.innerHeight) < 700 ? '4k_stars_milky_way.webp' : '8k_stars_milky_way.webp'
     loader.load(`./textures/${file}`, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace
       // 等距柱状天球贴图必须横向 Repeat，保证接缝处插值连续。
@@ -587,13 +589,13 @@ export class UniverseScene {
           material.needsUpdate = true
           // 地球：额外加载 normal map（山脉立体感）与 specular map（海洋反光）。
           if (def.id === 'earth') {
-            loader.load('./textures/2k_earth_normal_map.jpg', (nTex) => {
+            loader.load('./textures/2k_earth_normal_map.webp', (nTex) => {
               nTex.colorSpace = THREE.SRGBColorSpace
               material.normalMap = nTex
               material.normalScale.set(0.85, 0.85)
               material.needsUpdate = true
             })
-            loader.load('./textures/2k_earth_specular_map.jpg', (sTex) => {
+            loader.load('./textures/2k_earth_specular_map.webp', (sTex) => {
               // specular map 白色=海洋高光、黑色=陆地，必须反相后才能当粗糙度图用，
               // 否则陆地变成镜面，会在相机视角里出现刺眼反光点。
               const rough = roughnessFromSpecular(sTex)
@@ -615,7 +617,7 @@ export class UniverseScene {
           // 替换 daymap 为 atmosphere 贴图（SolarsystemScope 提供），
           // 外加一层半透明 cloud sphere（作为 mesh 子对象，随本体自转）增加轻微大气扰动。
           if (def.id === 'venus') {
-            loader.load('./textures/2k_venus_atmosphere.jpg', (atmTex) => {
+            loader.load('./textures/2k_venus_atmosphere.webp', (atmTex) => {
               atmTex.colorSpace = THREE.SRGBColorSpace
               material.map = atmTex
               material.needsUpdate = true
@@ -660,10 +662,10 @@ export class UniverseScene {
       }
 
       if (isSun) {
-        // 太阳本体：贴 SolarsystemScope 的 2k_sun.jpg（有真实太阳黑子和日冕细节）
+        // 太阳本体：贴 SolarsystemScope 的 2k_sun.webp（有真实太阳黑子和日冕细节）
         // 作为 MeshStandardMaterial 的 albedo 贴图，替换纯 emissive color 的塑料感。
         const sunLoader = new THREE.TextureLoader()
-        sunLoader.load('./textures/2k_sun.jpg', (sunTex) => {
+        sunLoader.load('./textures/2k_sun.webp', (sunTex) => {
           sunTex.colorSpace = THREE.SRGBColorSpace
           material.map = sunTex
           material.needsUpdate = true
@@ -807,7 +809,7 @@ export class UniverseScene {
       // 1) 独立云层壳：挂在 scene 下，animate 里每帧同步地球位置，
       //    自转比本体快 25%（和木星土星一致），制造大气流动感。
       const cloudLoader = new THREE.TextureLoader()
-      cloudLoader.load('./textures/2k_earth_clouds.jpg', (cTex) => {
+      cloudLoader.load('./textures/2k_earth_clouds.webp', (cTex) => {
         cTex.colorSpace = THREE.SRGBColorSpace
         const cloud = new THREE.Mesh(
           new THREE.SphereGeometry(earth.displayRadius * 1.012, 48, 32),
@@ -830,7 +832,7 @@ export class UniverseScene {
       // 2) 夜半球城市灯光：ShaderMaterial 叠加层，AdditiveBlending，
       //    在 lambert < 0.25 的背阳面渐显，昼夜交界 smoothstep 避免生硬。
       const nightLoader = new THREE.TextureLoader()
-      nightLoader.load('./textures/2k_earth_nightmap.jpg', (nTex) => {
+      nightLoader.load('./textures/2k_earth_nightmap.webp', (nTex) => {
         nTex.colorSpace = THREE.SRGBColorSpace
         const nightMaterial = new THREE.ShaderMaterial({
           transparent: true,
@@ -1200,6 +1202,23 @@ export class UniverseScene {
     dom.addEventListener('pointermove', this.onPointerMove)
     dom.addEventListener('wheel', this.onWheel, { passive: true })
     window.addEventListener('resize', this.onResize)
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
+  }
+
+  /**
+   * 页面可见性切换：隐藏时停掉 rAF，回到前台再重新起播。
+   * 浏览器在后台会压低帧率，但 EffectComposer + bloom 的每帧开销依然可观，
+   * 手机切后台放置时会持续耗电，因此直接停掉整条渲染管线。
+   */
+  private onVisibilityChange = (): void => {
+    this.pageVisible = !document.hidden
+    if (!this.pageVisible) {
+      cancelAnimationFrame(this.raf)
+      return
+    }
+    // 后台期间 clock 仍在累计时间，先丢弃这段间隔，避免回到前台瞬间跳一大帧。
+    this.clock.getDelta()
+    if (!this.disposed) this.raf = requestAnimationFrame(this.animate)
   }
 
   private onPointerDown = (e: PointerEvent): void => {
@@ -1261,7 +1280,7 @@ export class UniverseScene {
 
   /** 主循环：自转、公转、星点缓转、高亮环朝向相机、聚焦过渡。 */
   private animate = (): void => {
-    if (this.disposed) return
+    if (this.disposed || !this.pageVisible) return
     this.raf = requestAnimationFrame(this.animate)
     const dt = Math.min(this.clock.getDelta(), 0.05)
 
@@ -1517,6 +1536,7 @@ export class UniverseScene {
     dom.removeEventListener('pointermove', this.onPointerMove)
     dom.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('resize', this.onResize)
+    document.removeEventListener('visibilitychange', this.onVisibilityChange)
     this.controls.dispose()
     this.scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh

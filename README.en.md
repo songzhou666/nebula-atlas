@@ -30,7 +30,7 @@ Mobile (390×844):
 - **Comets**: Halley 1P (inclination 162.3°, retrograde, 76-year period) and Encke 2P (inclination 11.8°, prograde, 3.30 years), with real perihelion/aphelion; the ion tail points strictly anti-sunward, while the dust tail inherits the comet's local orbital velocity — curved near perihelion, straighter near aphelion.
 - **Real sky**: an 8k Milky Way panorama plus 2034 HYG bright stars placed by their true celestial directions.
 - **Atlas**: 16 bodies plus 2034 bright stars, with moons indented under their parent planet; stars are sorted brightest-first, paginated 60 per page, and "Turn to this star" aims the view at the selected one.
-- **Free camera**: drag to orbit, scroll to zoom, pause, reset view.
+- **Free camera**: drag to orbit, scroll to zoom, pause, reset view; the render loop stops automatically when the tab is hidden.
 - **Speed control**: independent sliders for orbital and spin speed — down to 0 or up.
 - **Click to focus**: click any body in the 3D view to fly to it; a detail panel opens on the right. Focusing a planet reveals its moon orbit guides, and focusing a moon switches to a close-up vantage.
 - **Detail panel**: drag the texture sideways to spin the body, plus a parameter table and a fun fact.
@@ -40,7 +40,7 @@ Mobile (390×844):
 
 - Vite 8 + React 19 + TypeScript 7 (strict)
 - Three.js 0.187: OrbitControls, EffectComposer / UnrealBloomPass, ShaderMaterial (Saturn's rings), CanvasTexture, Sprite, Points
-- Two-stage textures: 2k base maps load with the scene, 4k maps are lazy-loaded when a body is focused
+- Two-stage textures: 2k base maps load with the scene, 4k maps are lazy-loaded when a body is focused; all textures are WebP, about 45% of the original JPG size
 - Everything runs locally — no backend, no AI API
 
 ## Run locally
@@ -67,4 +67,4 @@ src/
 - Planets and moons: NASA National Space Science Data Center (NSSDC)
 - Comet orbits: JPL Small-Body Database (perihelion, aphelion, inclination and period of Halley 1P and Encke 2P)
 - Stars: HYG bright-star catalog, 2034 entries (name, constellation, magnitude, celestial direction, RGB)
-- Textures: planets, the Moon, the Milky Way and Saturn's rings come from [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0) — 2k base maps plus lazy-loaded 4k. Io, Europa, Ganymede and Callisto use official global mosaic samples from [USGS Astrogeology](https://astrogeology.usgs.gov/) (1024 px, Voyager + Galileo SSI, polar gaps filled). Titan has only a near-infrared near-global map and Triton no equirectangular global map at all, so those two are generated procedurally from their real surface traits (orange haze; mottled nitrogen-ice frost). A procedural texture is the fallback if any load fails.
+- Textures: planets, the Moon, the Milky Way and Saturn's rings come from [Solar System Scope](https://www.solarsystemscope.com/textures/) (CC BY 4.0) — 2k base maps plus lazy-loaded 4k, all converted to WebP. Io, Europa, Ganymede and Callisto use official global mosaic samples from [USGS Astrogeology](https://astrogeology.usgs.gov/) (1024 px, Voyager + Galileo SSI, polar gaps filled). Titan has only a near-infrared near-global map and Triton no equirectangular global map at all, so those two are generated procedurally from their real surface traits (orange haze; mottled nitrogen-ice frost). A procedural texture is the fallback if any load fails.
